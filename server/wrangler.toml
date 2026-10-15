@@ -15,8 +15,7 @@ ALLOWED_ORIGINS = "https://jfeldman777.github.io"
 [[d1_databases]]
 binding = "DB"
 database_name = "buddy-db"
-# Replace with the id printed by `wrangler d1 create buddy-db`.
-database_id = "00000000-0000-0000-0000-000000000000"
+database_id = "1d659061-3b11-4992-81f0-6579f53fcb3a"
 migrations_dir = "migrations"
 
 # Anonymous endpoints, per IP and endpoint group.
