@@ -46,10 +46,14 @@ test('стартовая страница содержит всё, что тре
 
 test('на стартовой странице есть разговор с Би: выбор голоса, имя, настройки', async () => {
   const html = await read('web/index.html');
-  for (const id of ['chat', 'chat-log', 'chat-voices', 'chat-text-mode', 'chat-name-form', 'chat-name', 'chat-change-voice', 'chat-change-name', 'chat-forget', 'welcome-back']) {
+  for (const id of ['chat', 'chat-log', 'chat-voices', 'chat-text-mode', 'chat-name-form', 'chat-name', 'chat-change-voice', 'chat-change-name', 'chat-forget', 'welcome-back', 'chat-voice-help', 'chat-voice-recheck']) {
     assert.match(html, new RegExp(`id="${id}"`), `нет элемента #${id}`);
   }
   assert.match(html, /Без голоса — только текст/);
+  for (const platform of ['android', 'ios', 'windows', 'mac']) {
+    assert.match(html, new RegExp(`id="chat-voice-help"[\\s\\S]*data-platform="${platform}"`), `нет инструкции по голосу для ${platform}`);
+  }
+  assert.match(html, /Speech Services by Google/);
   const css = await read('web/styles.css');
   assert.match(css, /\[hidden\]\s*\{\s*display:\s*none\s*!important;/, 'стили с display перекроют атрибут hidden');
 });

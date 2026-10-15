@@ -1,6 +1,7 @@
 import { VOICE_SAMPLE, prompts, normalizeName, pickVoices, findVoice, opening, afterVoiceChoice, afterName } from './dialogue.js';
 import { openStorage } from './storage.js';
 import { speechSupported, loadVoices, unlockSpeech, speak, stopSpeaking } from './speech.js';
+import { detectPlatform } from './pwa.js';
 
 const HISTORY_LIMIT = 20;
 
@@ -14,6 +15,11 @@ export function initChat({ onProfileChange }) {
   const nameInput = document.getElementById('chat-name');
   const idleNote = document.getElementById('chat-idle');
   const menu = document.getElementById('chat-menu');
+  const voiceHelp = document.getElementById('chat-voice-help');
+
+  const platform = detectPlatform();
+  const helpPlatform = platform === 'desktop' ? (/Macintosh/.test(navigator.userAgent) ? 'mac' : 'windows') : platform;
+  voiceHelp.querySelector(`details[data-platform="${helpPlatform}"]`)?.setAttribute('open', '');
 
   let storage = null;
   let profile = null;
@@ -22,6 +28,10 @@ export function initChat({ onProfileChange }) {
   let currentVoice = null;
   let started = false;
   let submitting = false;
+
+  function showVoiceHelpIfNeeded() {
+    voiceHelp.hidden = !(speechSupported() && voices.length === 0);
+  }
 
   function setStep(step) {
     voicesPanel.hidden = step !== 'chooseVoice';
@@ -101,7 +111,7 @@ export function initChat({ onProfileChange }) {
     mode = 'voice';
     currentVoice = voice;
     refreshReplayButtons();
-    await updateProfile({ mode: 'voice', voice: { uri: voice.voiceURI, name: voice.name, lang: voice.lang } });
+    await updateProfile({ mode: 'voice', voice: { uri: voice.voiceURI, name: voice.name, lang: voice.lang }, voiceDeclined: false });
     await userSay(`Голос: ${voice.name}`);
     const reply = afterVoiceChoice({ profile, mode });
     await biSay(reply.messages);
@@ -113,7 +123,7 @@ export function initChat({ onProfileChange }) {
     mode = 'text';
     currentVoice = null;
     refreshReplayButtons();
-    await updateProfile({ mode: 'text', voice: null });
+    await updateProfile({ mode: 'text', voice: null, voiceDeclined: true });
     await userSay('Без голоса, только текст');
     const reply = afterVoiceChoice({ profile, mode });
     await biSay(reply.messages);
@@ -165,13 +175,26 @@ export function initChat({ onProfileChange }) {
     if (!storage.persistent) messages.push('Похоже, браузер не даёт мне ничего запоминать — например, в приватном режиме. В следующий раз я тебя не узнаю.');
     await biSay(messages);
     setStep(result.step);
+    showVoiceHelpIfNeeded();
     if (profile) await updateProfile({ lastVisitAt: new Date().toISOString() });
+  }
+
+  async function recheckVoices() {
+    voices = pickVoices(await loadVoices());
+    showVoiceHelpIfNeeded();
+    if (voices.length) {
+      await biSay([prompts.voiceFound]);
+      setStep('chooseVoice');
+    } else {
+      await biSay([prompts.voiceStillMissing]);
+    }
   }
 
   async function changeVoice() {
     menu.open = false;
     if (!voices.length) {
       await biSay([prompts.noVoicesHere]);
+      showVoiceHelpIfNeeded();
       return;
     }
     await biSay([prompts.changeVoice]);
@@ -221,6 +244,7 @@ export function initChat({ onProfileChange }) {
   }
 
   textModeButton.addEventListener('click', chooseTextMode);
+  document.getElementById('chat-voice-recheck').addEventListener('click', recheckVoices);
   nameForm.addEventListener('submit', submitName);
   document.getElementById('chat-back').addEventListener('click', () => (history.state?.chat ? history.back() : close()));
   document.getElementById('chat-change-voice').addEventListener('click', changeVoice);

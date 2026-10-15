@@ -45,6 +45,42 @@
         </details>
       </header>
       <ol id="chat-log" class="chat-log" aria-live="polite"></ol>
+      <div id="chat-voice-help" class="chat-panel card voice-help" hidden>
+        <p><strong>Как добавить русский голос</strong></p>
+        <details data-platform="android">
+          <summary>Android, в том числе Samsung</summary>
+          <ol>
+            <li>«Настройки» → «Общие настройки» → «Преобразование текста в речь». На других телефонах этот пункт называется «Синтез речи» и находится в разделе «Язык и ввод».</li>
+            <li>В пункте «Предпочтительный модуль» выберите «Синтезатор речи Google» (Speech Services by Google). Если его нет — установите «Speech Services by Google» из Google Play.</li>
+            <li>Нажмите ⚙ рядом с ним → «Установить голосовые данные» → «Русский».</li>
+            <li>Полностью закройте Buddy и откройте снова.</li>
+          </ol>
+          <p class="note">Названия пунктов немного отличаются в разных версиях Android.</p>
+        </details>
+        <details data-platform="ios">
+          <summary>iPhone и iPad</summary>
+          <ol>
+            <li>«Настройки» → «Универсальный доступ» → «Устный контент» → «Голоса» → «Русский».</li>
+            <li>Загрузите один из голосов.</li>
+            <li>Полностью закройте Buddy и откройте снова.</li>
+          </ol>
+        </details>
+        <details data-platform="windows">
+          <summary>Windows</summary>
+          <ol>
+            <li>«Параметры» → «Время и язык» → «Речь» → «Добавить голоса» → «Русский».</li>
+            <li>Перезапустите браузер.</li>
+          </ol>
+        </details>
+        <details data-platform="mac">
+          <summary>Mac</summary>
+          <ol>
+            <li>«Системные настройки» → «Универсальный доступ» → «Устный контент» → «Системный голос» → «Управлять голосами» → «Русский».</li>
+            <li>Перезапустите браузер.</li>
+          </ol>
+        </details>
+        <button type="button" class="btn btn-secondary" id="chat-voice-recheck">Голос добавлен — проверить</button>
+      </div>
       <div id="chat-voices" class="chat-panel" hidden>
         <ul id="chat-voice-list" class="voice-list"></ul>
         <button type="button" class="btn btn-secondary" id="chat-text-mode">Без голоса — только текст</button>

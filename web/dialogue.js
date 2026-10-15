@@ -9,6 +9,8 @@ export const prompts = {
   changeVoice: 'Выбери, каким голосом мне говорить.',
   changeName: 'Как мне тебя называть?',
   noVoicesHere: 'На этом устройстве нет русского голоса, так что я могу только писать.',
+  voiceFound: 'Голос появился! Выбери, каким мне говорить.',
+  voiceStillMissing: 'Пока не вижу русского голоса. Закрой Buddy полностью и открой снова — иногда браузер замечает новый голос только после перезапуска.',
 };
 
 export function normalizeName(raw) {
@@ -67,6 +69,15 @@ export function opening({ profile, speechSupported, voices }) {
       return { messages: [`Привет, ${name}! Рад снова тебя видеть. Голоса, которым я говорил, здесь нет, так что пока буду писать.`], step: 'idle', mode: 'text' };
     }
     return { messages: [`Привет, ${name}! Рад снова тебя видеть. Голоса, которым я говорил, здесь нет. Выбери другой.`], step: 'chooseVoice', mode: null };
+  }
+
+  // Text mode was forced by a missing voice, not chosen by the person: offer a voice once one appears.
+  if (profile.mode === 'text' && !profile.voiceDeclined && canSpeak) {
+    return {
+      messages: [`Привет, ${name}! Рад снова тебя видеть. Теперь у меня есть русский голос — выбери, каким мне говорить.`],
+      step: 'chooseVoice',
+      mode: 'text',
+    };
   }
 
   return { messages: [`Привет, ${name}! Рад снова тебя видеть.`], step: 'idle', mode: profile.mode ?? 'text' };

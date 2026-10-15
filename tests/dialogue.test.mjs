@@ -51,6 +51,21 @@ test('если сохранённого голоса на устройстве �
   assert.match(result.messages[0], /Привет, Аня!.*Выбери другой/);
 });
 
+test('если текст был вынужденным, а голос появился, Би сам предлагает выбрать голос', () => {
+  const profile = { name: 'Аня', mode: 'text', voice: null };
+  const result = opening({ profile, speechSupported: true, voices: [ru1] });
+  assert.equal(result.step, 'chooseVoice');
+  assert.match(result.messages[0], /Теперь у меня есть русский голос/);
+  assert.equal(opening({ profile, speechSupported: true, voices: [] }).step, 'idle');
+});
+
+test('если человек сам выбрал «только текст», Би не навязывает голос', () => {
+  const profile = { name: 'Аня', mode: 'text', voice: null, voiceDeclined: true };
+  const result = opening({ profile, speechSupported: true, voices: [ru1] });
+  assert.equal(result.step, 'idle');
+  assert.deepEqual(result.messages, ['Привет, Аня! Рад снова тебя видеть.']);
+});
+
 test('если голос выбран, но имя не названо, Би возвращается к имени', () => {
   const result = opening({ profile: { mode: 'voice', voice: { uri: ru1.voiceURI } }, speechSupported: true, voices: [ru1] });
   assert.equal(result.step, 'askName');

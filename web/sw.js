@@ -1,5 +1,5 @@
 // Bump CACHE_VERSION whenever the app shell changes, so installed clients drop the old cache.
-const CACHE_VERSION = 'buddy-v2';
+const CACHE_VERSION = 'buddy-v3';
 
 const APP_SHELL = [
   './',

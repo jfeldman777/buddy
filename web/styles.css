@@ -382,8 +382,23 @@ body.chat-open footer {
   font-size: 0.95rem;
 }
 
-#chat-text-mode {
+#chat-text-mode,
+#chat-voice-recheck {
   width: 100%;
+}
+
+.voice-help details {
+  border-top: 1px solid var(--line);
+  padding: 10px 0;
+}
+
+.voice-help summary {
+  font-weight: 600;
+  cursor: pointer;
+}
+
+.voice-help ol {
+  margin-top: 10px;
 }
 
 .chat-form {
