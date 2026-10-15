@@ -12,7 +12,25 @@ export const prompts = {
   voiceFound: 'Голос появился! Выбери, каким мне говорить.',
   voiceStillMissing: 'Пока не вижу русского голоса. Закрой Buddy полностью и открой снова — иногда браузер замечает новый голос только после перезапуска.',
   thanksForRating: 'Спасибо! Оценку можно поменять и дописать комментарий в журнале.',
+  askMicrophone: 'Можно отвечать голосом. Я включаю микрофон, только когда ты нажимаешь 🎤, слушаю одну фразу и выключаю его. Распознаёт речь твой браузер: звук уходит в Google или Apple, но не разработчику. Я вставлю текст в поле, а отправлять или нет — решаешь ты. Разрешаешь?',
+  micAllowed: 'Спасибо! Говори — я слушаю.',
+  micDeclined: 'Хорошо, без микрофона. Если передумаешь — нажми 🎤 ещё раз.',
+  micRevoked: 'Микрофон выключен. Больше не буду его включать, пока не разрешишь снова.',
+  micNothingHeard: 'Я ничего не расслышал. Нажми 🎤 и скажи ещё раз — или напиши.',
+  micHeard: 'Проверь, правильно ли я расслышал, и нажми «Ответить».',
+  micBlocked: 'Браузер не дал доступ к микрофону. Его можно разрешить в настройках браузера для этого сайта — или просто напиши.',
+  micUnavailable: 'Распознавание речи сейчас не работает — возможно, нет связи. Напиши, пожалуйста.',
 };
+
+// What tapping 🎤 leads to. The microphone is never started without the person's saved permission (D1).
+export function micDecision({ supported, permission }) {
+  if (!supported) return 'unsupported';
+  return permission?.granted ? 'listen' : 'ask';
+}
+
+export function micErrorReply(code) {
+  return code === 'not-allowed' || code === 'service-not-allowed' || code === 'audio-capture' ? prompts.micBlocked : prompts.micUnavailable;
+}
 
 export function normalizeName(raw) {
   const name = String(raw ?? '')
@@ -166,11 +184,36 @@ export function explainAct(kind, ctx = {}) {
       motive: 'Принять поправку и пересмотреть, как обращаюсь.',
       declarations: ['D5', 'D3'],
     },
+    mic_allowed: {
+      title: 'Би получил разрешение на микрофон',
+      situation: 'Нажата кнопка 🎤. Разрешения на микрофон ещё не было.',
+      goal: 'Дать возможность отвечать голосом.',
+      decision: 'Сначала объяснить, как работает микрофон и куда уходит звук, и спросить разрешения. Включать только после «Разрешить».',
+      motive: 'Микрофон — только с разрешения. Человек должен знать, что звук распознаёт браузер, а не разработчик.',
+      declarations: ['D1', 'D4'],
+    },
+    listened: {
+      title: 'Би выслушал ответ',
+      situation: 'Нажата кнопка 🎤. Разрешение на микрофон есть.',
+      goal: 'Принять ответ голосом.',
+      decision: 'Выслушать одну фразу, выключить микрофон и вставить текст в поле. Отправлять не стал — это решает человек.',
+      motive: 'Слушать только по нажатию и не решать за человека, что отправить.',
+      declarations: ['D1', 'D6'],
+      claims: { sentData: false, usedDevices: true },
+    },
+    mic_revoked: {
+      title: 'Би выключил микрофон по просьбе',
+      situation: 'В настройках выбрано «Выключить микрофон».',
+      goal: 'Выполнить отказ.',
+      decision: 'Забыть разрешение и не включать микрофон, пока не разрешат снова.',
+      motive: 'Отказ нужно уважать.',
+      declarations: ['D1', 'D7'],
+    },
   };
   const act = acts[kind];
   if (!act) throw new Error(`Неизвестный поступок: ${kind}`);
-  const { title, ...explanation } = act;
-  return { title, explanation: { ...explanation, claims: { ...NOTHING_SENT }, source: 'script' } };
+  const { title, claims = NOTHING_SENT, ...explanation } = act;
+  return { title, explanation: { ...explanation, claims: { ...claims }, source: 'script' } };
 }
 
 export function afterVoiceChoice({ profile, mode }) {

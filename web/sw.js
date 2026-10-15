@@ -1,5 +1,5 @@
 // Bump with `npm run bump` whenever the site changes: installed clients drop the old cache and see the new number.
-const VERSION = '003';
+const VERSION = '004';
 const CACHE_VERSION = `buddy-${VERSION}`;
 
 const APP_SHELL = [
@@ -17,6 +17,7 @@ const APP_SHELL = [
   'dialogue.js',
   'storage.js',
   'speech.js',
+  'listen.js',
   'declarations.js',
   'declarations.json',
   'manifest.webmanifest',

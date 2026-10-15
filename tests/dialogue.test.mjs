@@ -1,7 +1,22 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { readFile } from 'node:fs/promises';
-import { normalizeName, pickVoices, findVoice, opening, afterVoiceChoice, afterName, MAX_NAME_LENGTH } from '../web/dialogue.js';
+import { normalizeName, pickVoices, findVoice, opening, afterVoiceChoice, afterName, MAX_NAME_LENGTH, micDecision, micErrorReply, prompts } from '../web/dialogue.js';
+
+test('микрофон: без поддержки кнопки нет, без разрешения Би спрашивает, с разрешением слушает', () => {
+  assert.equal(micDecision({ supported: false, permission: { granted: true } }), 'unsupported');
+  assert.equal(micDecision({ supported: true, permission: null }), 'ask');
+  assert.equal(micDecision({ supported: true, permission: { granted: false } }), 'ask', 'отозванное разрешение — снова спросить');
+  assert.equal(micDecision({ supported: true, permission: { granted: true, at: 'T' } }), 'listen');
+});
+
+test('Би честно говорит, куда уходит звук, и что отправляет человек', () => {
+  assert.match(prompts.askMicrophone, /Google или Apple/);
+  assert.match(prompts.askMicrophone, /не разработчику/);
+  assert.match(prompts.askMicrophone, /только когда ты нажимаешь 🎤/);
+  assert.equal(micErrorReply('not-allowed'), prompts.micBlocked);
+  assert.equal(micErrorReply('network'), prompts.micUnavailable);
+});
 
 const ru1 = { name: 'Milena', voiceURI: 'com.apple.voice.Milena', lang: 'ru-RU' };
 const ru2 = { name: 'Google русский', voiceURI: 'Google русский', lang: 'ru-RU' };

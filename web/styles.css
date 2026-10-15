@@ -453,6 +453,17 @@ body.chat-open footer {
   border-radius: 999px;
 }
 
+.mic-button {
+  min-width: 52px;
+  padding: 0 12px;
+}
+
+.mic-button.listening {
+  background: #b00020;
+  border-color: #b00020;
+  color: var(--paper);
+}
+
 .chat-form input:focus-visible {
   outline: 3px solid var(--green);
   outline-offset: 2px;

@@ -49,7 +49,7 @@ function hasFact(actions, type, predicate = () => true) {
 }
 
 function checkPermissions(explanation, actions) {
-  const granted = new Set(actions.facts.filter((f) => f.type === 'permission_granted').map((f) => f.device));
+  const granted = new Set(actions.facts.filter((f) => f.type === 'permission_granted' || f.type === 'permission_confirmed').map((f) => f.device));
   const used = actions.facts.filter((f) => f.type === 'device_used');
   const unauthorized = used.filter((f) => !granted.has(f.device));
   if (unauthorized.length) {
@@ -112,6 +112,14 @@ export function describeFact(fact) {
       return `Показана инструкция: ${fact.topic}.`;
     case 'permission_granted':
       return `Получено разрешение: ${deviceLabels[fact.device] ?? fact.device}.`;
+    case 'permission_confirmed':
+      return `Перед использованием проверено сохранённое разрешение: ${deviceLabels[fact.device] ?? fact.device}.`;
+    case 'permission_revoked':
+      return `Разрешение отозвано: ${deviceLabels[fact.device] ?? fact.device}.`;
+    case 'audio_to_recognizer':
+      return 'Звук передан распознаванию речи браузера (Google или Apple), не разработчику.';
+    case 'text_inserted':
+      return 'Распознанный текст вставлен в поле ответа. Отправить его может только человек.';
     case 'device_used':
       return `Использовано устройство: ${deviceLabels[fact.device] ?? fact.device}.`;
     case 'data_sent':

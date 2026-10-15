@@ -53,6 +53,19 @@ test('D1: микрофон без разрешения — нарушение, �
   assert.equal(statusOf(checkCompliance({}, allowed), 'D1').status, 'kept');
 });
 
+test('голосовой ввод: с подтверждённым разрешением D1 соблюдена, без него — нарушена', () => {
+  const { explanation } = explainAct('listened');
+  const used = [{ type: 'device_used', device: 'microphone' }, { type: 'audio_to_recognizer' }, { type: 'text_inserted' }];
+  const ok = checkCompliance(explanation, { facts: [{ type: 'permission_confirmed', device: 'microphone', grantedAt: 'T' }, ...used] });
+  assert.equal(statusOf(ok, 'D1').status, 'kept');
+  assert.equal(statusOf(ok, 'D2').status, 'kept', 'звук уходит распознаванию браузера, а не разработчику');
+  assert.equal(statusOf(ok, 'D6').status, 'unchecked');
+  assert.equal(statusOf(checkCompliance(explanation, { facts: used }), 'D1').status, 'violated');
+  const { explanation: silent } = explainAct('name_remembered', { name: 'Аня' });
+  assert.equal(statusOf(checkCompliance(silent, { facts: [{ type: 'permission_confirmed', device: 'microphone' }, ...used] }), 'D1').status, 'violated', 'Би сказал, что не пользовался микрофоном');
+  assert.match(describeFact({ type: 'audio_to_recognizer' }), /не разработчику/);
+});
+
 test('расхождение объяснения Би с действиями программы — нарушение', () => {
   const explanation = { claims: { sentData: false, usedDevices: false } };
   const sent = { facts: [{ type: 'data_sent', what: 'запись журнала', consent: true }] };
@@ -115,7 +128,7 @@ test('экспорт: формат, версия деклараций, все ч
 
 test('у каждого поступка из сценария есть объяснение со всеми полями и только декларации D1–D7', async () => {
   const declarations = JSON.parse(await readFile(new URL('../web/declarations.json', import.meta.url), 'utf8')).declarations.map((d) => d.id);
-  const kinds = ['recognized', 'text_forced', 'voice_missing', 'voice_offered', 'voice_found', 'voice_chosen', 'text_chosen', 'name_remembered', 'name_changed'];
+  const kinds = ['recognized', 'text_forced', 'voice_missing', 'voice_offered', 'voice_found', 'voice_chosen', 'text_chosen', 'name_remembered', 'name_changed', 'mic_allowed', 'listened', 'mic_revoked'];
   for (const kind of kinds) {
     const { title, explanation } = explainAct(kind, { name: 'Аня', previousName: 'Ann', voiceName: 'Milena', canSpeak: true, speechSupported: true });
     assert.ok(title, kind);
@@ -123,7 +136,7 @@ test('у каждого поступка из сценария есть объя
     assert.ok(explanation.declarations.length > 0, `${kind}: нет деклараций`);
     for (const id of explanation.declarations) assert.ok(declarations.includes(id), `${kind}: неизвестная декларация ${id}`);
     assert.equal(explanation.source, 'script');
-    assert.deepEqual(explanation.claims, { sentData: false, usedDevices: false });
+    assert.deepEqual(explanation.claims, { sentData: false, usedDevices: kind === 'listened' });
     assert.doesNotMatch(Object.values(explanation).join(' '), /undefined/, `${kind}: в тексте undefined`);
   }
   assert.throws(() => explainAct('unknown'));

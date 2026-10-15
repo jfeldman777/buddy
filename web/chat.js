@@ -1,4 +1,5 @@
-import { VOICE_SAMPLE, prompts, normalizeName, pickVoices, findVoice, opening, afterVoiceChoice, afterName, explainAct } from './dialogue.js';
+import { VOICE_SAMPLE, prompts, normalizeName, pickVoices, findVoice, opening, afterVoiceChoice, afterName, explainAct, micDecision, micErrorReply } from './dialogue.js';
+import { recognitionSupported, listenOnce } from './listen.js';
 import { buildEntry, normalizeRating, answerLabels, RATING_QUESTION } from './journal.js';
 import { openStorage } from './storage.js';
 import { speechSupported, loadVoices, unlockSpeech, speak, stopSpeaking } from './speech.js';
@@ -18,6 +19,9 @@ export function initChat({ onProfileChange }) {
   const menu = document.getElementById('chat-menu');
   const voiceHelp = document.getElementById('chat-voice-help');
   const ratingPanel = document.getElementById('chat-rating');
+  const micButton = document.getElementById('chat-mic');
+  const micConsent = document.getElementById('chat-mic-consent');
+  const micRevoke = document.getElementById('chat-mic-revoke');
 
   const platform = detectPlatform();
   const helpPlatform = platform === 'desktop' ? (/Macintosh/.test(navigator.userAgent) ? 'mac' : 'windows') : platform;
@@ -31,6 +35,8 @@ export function initChat({ onProfileChange }) {
   let started = false;
   let submitting = false;
   let ratingEventId = null;
+  let listening = null;
+  let micPermissionNow = null;
 
   function showVoiceHelpIfNeeded() {
     voiceHelp.hidden = !(speechSupported() && voices.length === 0);
@@ -52,6 +58,7 @@ export function initChat({ onProfileChange }) {
     voicesPanel.hidden = step !== 'chooseVoice';
     nameForm.hidden = step !== 'askName';
     ratingPanel.hidden = step !== 'rate';
+    micConsent.hidden = true;
     idleNote.hidden = step !== 'idle';
     if (step === 'chooseVoice') renderVoices();
     if (step === 'askName') {
@@ -211,11 +218,110 @@ export function initChat({ onProfileChange }) {
     setStep('idle');
   }
 
+  // micPermissionNow is set synchronously in the «Разрешить» click, so listening can start inside that gesture
+  // while the permission is still being written to IndexedDB.
+  function micPermission() {
+    return micPermissionNow ?? profile?.permissions?.microphone ?? null;
+  }
+
+  function refreshMic() {
+    micButton.hidden = !recognitionSupported();
+    micRevoke.hidden = !micPermission()?.granted;
+  }
+
+  function setMicPermission(permission) {
+    micPermissionNow = permission;
+    refreshMic();
+    return updateProfile({ permissions: { ...(profile?.permissions ?? {}), microphone: permission } });
+  }
+
+  function showListening(on) {
+    micButton.classList.toggle('listening', on);
+    micButton.setAttribute('aria-pressed', String(on));
+    micButton.setAttribute('aria-label', on ? 'Остановить запись' : 'Ответить голосом');
+    micButton.textContent = on ? '■' : '🎤';
+  }
+
+  function startListening() {
+    const permission = micPermission();
+    if (micDecision({ supported: recognitionSupported(), permission }) !== 'listen') return;
+    stopSpeaking();
+    const before = nameInput.value;
+    let session;
+    try {
+      session = listenOnce({ onInterim: (text) => (nameInput.value = text) });
+    } catch (error) {
+      biSay([micErrorReply(error.message)]);
+      return;
+    }
+    listening = session;
+    showListening(true);
+    session.promise
+      .then(async (text) => {
+        nameInput.value = text || before;
+        const facts = [
+          { type: 'permission_confirmed', device: 'microphone', grantedAt: permission.at },
+          { type: 'device_used', device: 'microphone' },
+          { type: 'audio_to_recognizer' },
+        ];
+        if (text) facts.push({ type: 'text_inserted' });
+        await biSay([text ? prompts.micHeard : prompts.micNothingHeard]);
+        await record('listened', {}, facts, text ? 'Текст вставлен в поле ответа.' : 'Ничего не расслышано.');
+      }, async (error) => {
+        nameInput.value = before;
+        await biSay([micErrorReply(error.code ?? error.message)]);
+      })
+      .finally(() => {
+        listening = null;
+        showListening(false);
+        nameInput.focus();
+      });
+  }
+
+  async function onMic() {
+    if (listening) {
+      listening.stop();
+      return;
+    }
+    const decision = micDecision({ supported: recognitionSupported(), permission: micPermission() });
+    if (decision === 'listen') startListening();
+    else if (decision === 'ask') {
+      await biSay([prompts.askMicrophone]);
+      micConsent.hidden = false;
+    }
+  }
+
+  async function allowMic() {
+    micConsent.hidden = true;
+    const said = userSay('Разрешаю микрофон');
+    const saved = setMicPermission({ granted: true, at: new Date().toISOString() });
+    startListening();
+    await said;
+    await saved;
+    await record('mic_allowed', {}, [{ type: 'permission_granted', device: 'microphone' }], 'Разрешение сохранено на этом устройстве.');
+  }
+
+  async function declineMic() {
+    micConsent.hidden = true;
+    await userSay('Не сейчас');
+    await biSay([prompts.micDeclined]);
+  }
+
+  async function revokeMic() {
+    menu.open = false;
+    listening?.stop();
+    await setMicPermission({ granted: false, at: new Date().toISOString() });
+    await biSay([prompts.micRevoked]);
+    await record('mic_revoked', {}, [{ type: 'permission_revoked', device: 'microphone' }], 'Разрешение снято.');
+  }
+
   async function start() {
     storage = await openStorage();
     const supported = speechSupported();
     voices = pickVoices(supported ? await loadVoices() : []);
     profile = await storage.getProfile();
+
+    refreshMic();
 
     const history = await storage.recentMessages(HISTORY_LIMIT);
     for (const message of history) appendMessage(message.role, message.text, { earlier: true });
@@ -289,11 +395,15 @@ export function initChat({ onProfileChange }) {
     menu.open = false;
     if (!window.confirm('Удалить с этого устройства имя, выбор голоса и историю разговора с Би?')) return;
     stopSpeaking();
+    listening?.stop();
     await storage.deleteAll();
     profile = null;
     mode = null;
     currentVoice = null;
     ratingEventId = null;
+    micPermissionNow = null;
+    micConsent.hidden = true;
+    refreshMic();
     started = false;
     log.replaceChildren();
     onProfileChange?.(null);
@@ -318,12 +428,17 @@ export function initChat({ onProfileChange }) {
 
   function close() {
     stopSpeaking();
+    listening?.stop();
     show(false);
     if (location.hash === '#bi') history.replaceState(null, '', location.pathname + location.search);
   }
 
   textModeButton.addEventListener('click', chooseTextMode);
   document.getElementById('chat-voice-recheck').addEventListener('click', recheckVoices);
+  micButton.addEventListener('click', onMic);
+  document.getElementById('chat-mic-allow').addEventListener('click', allowMic);
+  document.getElementById('chat-mic-decline').addEventListener('click', declineMic);
+  micRevoke.addEventListener('click', revokeMic);
   for (const button of ratingPanel.querySelectorAll('button[data-answer]')) {
     button.addEventListener('click', () => rate(button.dataset.answer));
   }

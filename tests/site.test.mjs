@@ -83,11 +83,27 @@ test('D2: код сайта не отправляет данные по сети
   }
 });
 
-test('D1: код сайта не обращается к микрофону и камере', async () => {
+test('D1: к микрофону обращается только listen.js, камера не используется', async () => {
   for (const file of (await readdir(WEB)).filter((f) => f.endsWith('.js') || f.endsWith('.html'))) {
     const text = await read(`web/${file}`);
-    assert.doesNotMatch(text, /getUserMedia|SpeechRecognition|mediaDevices/, `${file} обращается к микрофону или камере`);
+    assert.doesNotMatch(text, /getUserMedia|mediaDevices/, `${file} обращается к микрофону или камере напрямую`);
+    if (file !== 'listen.js') assert.doesNotMatch(text, /SpeechRecognition/, `${file} обращается к распознаванию речи в обход listen.js`);
+    if (!['listen.js', 'chat.js'].includes(file)) assert.doesNotMatch(text, /listenOnce/, `${file} включает микрофон`);
   }
+  const listen = await read('web/listen.js');
+  assert.match(listen, /continuous = false/, 'микрофон слушает только одну фразу');
+});
+
+test('D1: chat.js включает микрофон только после проверки сохранённого разрешения', async () => {
+  const chat = await read('web/chat.js');
+  const calls = [...chat.matchAll(/listenOnce\(/g)];
+  assert.equal(calls.length, 1, 'микрофон включается в одном месте');
+  const body = chat.match(/function startListening\(\) \{([\s\S]*?)\r?\n {2}\}\r?\n/)?.[1];
+  assert.ok(body, 'нет функции startListening');
+  const guard = body.indexOf("micDecision({ supported: recognitionSupported(), permission }) !== 'listen') return;");
+  assert.ok(guard >= 0, 'startListening не проверяет разрешение');
+  assert.ok(guard < body.indexOf('listenOnce('), 'проверка разрешения должна идти до включения микрофона');
+  assert.doesNotMatch(chat, /requestSubmit\(|nameForm\.submit\(/, 'распознанный текст не отправляется без человека');
 });
 
 test('стартовая страница не обещает автоматическую установку', async () => {
