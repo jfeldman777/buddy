@@ -46,7 +46,7 @@ test('стартовая страница содержит всё, что тре
 
 test('на стартовой странице есть разговор с Би: выбор голоса, имя, настройки', async () => {
   const html = await read('web/index.html');
-  for (const id of ['chat', 'chat-log', 'chat-voices', 'chat-text-mode', 'chat-name-form', 'chat-name', 'chat-change-voice', 'chat-change-name', 'chat-forget', 'welcome-back', 'chat-voice-help', 'chat-voice-recheck']) {
+  for (const id of ['chat', 'chat-log', 'chat-voices', 'chat-text-mode', 'chat-name-form', 'chat-name', 'chat-change-voice', 'chat-change-name', 'chat-forget', 'welcome-back', 'chat-voice-help', 'chat-voice-recheck', 'chat-rating', 'chat-journal']) {
     assert.match(html, new RegExp(`id="${id}"`), `нет элемента #${id}`);
   }
   assert.match(html, /Без голоса — только текст/);
@@ -56,6 +56,30 @@ test('на стартовой странице есть разговор с Би
   assert.match(html, /Speech Services by Google/);
   const css = await read('web/styles.css');
   assert.match(css, /\[hidden\]\s*\{\s*display:\s*none\s*!important;/, 'стили с display перекроют атрибут hidden');
+});
+
+test('журнал поступков Би: просмотр, экспорт, удаление, оценка «Да / Нет / Не знаю»', async () => {
+  const html = await read('web/journal.html');
+  for (const id of ['journal-list', 'journal-export', 'journal-clear', 'journal-empty', 'journal-status']) {
+    assert.match(html, new RegExp(`id="${id}"`), `нет элемента #${id}`);
+  }
+  assert.match(html, /только на этом устройстве/);
+  assert.match(html, /declarations\.html/);
+  const index = await read('web/index.html');
+  for (const answer of ['yes', 'no', 'unsure']) assert.match(index, new RegExp(`data-answer="${answer}"`));
+  assert.match(index, /href="journal\.html"/);
+  const page = await read('web/journal-page.js');
+  assert.doesNotMatch(page, /fetch\((?!'declarations\.json')/, 'страница журнала ничего не отправляет по сети');
+});
+
+test('D2: код сайта не отправляет данные по сети', async () => {
+  for (const file of (await readdir(WEB)).filter((f) => f.endsWith('.js') && f !== 'sw.js')) {
+    const text = await read(`web/${file}`);
+    assert.doesNotMatch(text, /XMLHttpRequest|sendBeacon|WebSocket|method:\s*['"]POST/i, `${file} отправляет данные`);
+    for (const call of text.matchAll(/fetch\(([^)]*)\)/g)) {
+      assert.equal(call[1], "'declarations.json'", `${file}: неожиданный запрос fetch(${call[1]})`);
+    }
+  }
 });
 
 test('D1: код сайта не обращается к микрофону и камере', async () => {
@@ -72,7 +96,7 @@ test('стартовая страница не обещает автоматич
 });
 
 test('все локальные ссылки страниц указывают на существующие файлы', async () => {
-  for (const page of ['index.html', 'declarations.html']) {
+  for (const page of ['index.html', 'declarations.html', 'journal.html']) {
     const html = await read(`web/${page}`);
     for (const ref of localRefs(html)) {
       assert.ok(await exists(join(WEB, ref)), `${page}: нет файла ${ref}`);

@@ -1,4 +1,5 @@
-import { VOICE_SAMPLE, prompts, normalizeName, pickVoices, findVoice, opening, afterVoiceChoice, afterName } from './dialogue.js';
+import { VOICE_SAMPLE, prompts, normalizeName, pickVoices, findVoice, opening, afterVoiceChoice, afterName, explainAct } from './dialogue.js';
+import { buildEntry, normalizeRating, answerLabels, RATING_QUESTION } from './journal.js';
 import { openStorage } from './storage.js';
 import { speechSupported, loadVoices, unlockSpeech, speak, stopSpeaking } from './speech.js';
 import { detectPlatform } from './pwa.js';
@@ -16,6 +17,7 @@ export function initChat({ onProfileChange }) {
   const idleNote = document.getElementById('chat-idle');
   const menu = document.getElementById('chat-menu');
   const voiceHelp = document.getElementById('chat-voice-help');
+  const ratingPanel = document.getElementById('chat-rating');
 
   const platform = detectPlatform();
   const helpPlatform = platform === 'desktop' ? (/Macintosh/.test(navigator.userAgent) ? 'mac' : 'windows') : platform;
@@ -28,14 +30,28 @@ export function initChat({ onProfileChange }) {
   let currentVoice = null;
   let started = false;
   let submitting = false;
+  let ratingEventId = null;
 
   function showVoiceHelpIfNeeded() {
     voiceHelp.hidden = !(speechSupported() && voices.length === 0);
+    return !voiceHelp.hidden;
+  }
+
+  async function record(kind, ctx, facts, result) {
+    const { title, explanation } = explainAct(kind, ctx);
+    const entry = buildEntry({ kind, title, explanation, facts, result });
+    try {
+      await storage.addJournalEntry(entry);
+    } catch (error) {
+      console.warn('Запись в журнал не удалась:', error);
+    }
+    return entry.event.eventId;
   }
 
   function setStep(step) {
     voicesPanel.hidden = step !== 'chooseVoice';
     nameForm.hidden = step !== 'askName';
+    ratingPanel.hidden = step !== 'rate';
     idleNote.hidden = step !== 'idle';
     if (step === 'chooseVoice') renderVoices();
     if (step === 'askName') {
@@ -68,13 +84,18 @@ export function initChat({ onProfileChange }) {
     for (const button of log.querySelectorAll('.msg-replay')) button.hidden = mode !== 'voice';
   }
 
+  // Returns the program fact about speech, or null when Bi only wrote.
   async function biSay(messages) {
     for (const text of messages) {
       appendMessage('bi', text);
       await storage.addMessage('bi', text);
     }
-    if (mode === 'voice') speak(messages.join(' '), currentVoice);
+    if (mode !== 'voice' || !currentVoice) return null;
+    speak(messages.join(' '), currentVoice);
+    return { type: 'speech_requested', voice: currentVoice.name };
   }
+
+  const withSpeech = (facts, speech) => (speech ? [...facts, speech] : facts);
 
   async function userSay(text) {
     appendMessage('user', text);
@@ -114,8 +135,11 @@ export function initChat({ onProfileChange }) {
     await updateProfile({ mode: 'voice', voice: { uri: voice.voiceURI, name: voice.name, lang: voice.lang }, voiceDeclined: false });
     await userSay(`Голос: ${voice.name}`);
     const reply = afterVoiceChoice({ profile, mode });
-    await biSay(reply.messages);
+    const speech = await biSay(reply.messages);
     setStep(reply.step);
+    await record('voice_chosen', { voiceName: voice.name },
+      withSpeech([{ type: 'saved_on_device', what: 'голос', value: voice.name }], speech),
+      'Голос сохранён на этом устройстве.');
   }
 
   async function chooseTextMode() {
@@ -128,6 +152,9 @@ export function initChat({ onProfileChange }) {
     const reply = afterVoiceChoice({ profile, mode });
     await biSay(reply.messages);
     setStep(reply.step);
+    await record('text_chosen', {},
+      [{ type: 'saved_on_device', what: 'режим', value: 'только текст' }],
+      'Би только пишет и сам голос не предлагает.');
   }
 
   async function submitName(event) {
@@ -153,9 +180,35 @@ export function initChat({ onProfileChange }) {
     await updateProfile({ name: result.name, mode });
     await userSay(result.name);
     const reply = afterName({ previousName, name: result.name, mode });
-    await biSay(reply.messages);
+    const speech = await biSay(reply.messages);
     setStep(reply.step);
     navigator.storage?.persist?.().catch(() => {});
+    const facts = withSpeech([{ type: 'saved_on_device', what: 'имя', value: result.name }], speech);
+    if (previousName) {
+      await record('name_changed', { previousName, name: result.name }, facts, 'Новое имя сохранено на этом устройстве.');
+      return;
+    }
+    const eventId = await record('name_remembered', { name: result.name }, facts, 'Имя сохранено на этом устройстве.');
+    await askRating(eventId);
+  }
+
+  // Asked once, after the acquaintance, not after every line (spec, section 9).
+  async function askRating(eventId) {
+    ratingEventId = eventId;
+    await biSay([RATING_QUESTION]);
+    setStep('rate');
+  }
+
+  async function rate(answer) {
+    if (!ratingEventId) return;
+    const result = normalizeRating({ answer });
+    if (!result.ok) return;
+    const eventId = ratingEventId;
+    ratingEventId = null;
+    await storage.rateEvent(eventId, result.rating);
+    await userSay(answerLabels[answer]);
+    await biSay([prompts.thanksForRating]);
+    setStep('idle');
   }
 
   async function start() {
@@ -173,10 +226,34 @@ export function initChat({ onProfileChange }) {
 
     const messages = [...result.messages];
     if (!storage.persistent) messages.push('Похоже, браузер не даёт мне ничего запоминать — например, в приватном режиме. В следующий раз я тебя не узнаю.');
-    await biSay(messages);
+    const speech = await biSay(messages);
     setStep(result.step);
-    showVoiceHelpIfNeeded();
+    const helpShown = showVoiceHelpIfNeeded();
     if (profile) await updateProfile({ lastVisitAt: new Date().toISOString() });
+    if (result.act) await recordOpening(result, speech, helpShown);
+  }
+
+  async function recordOpening({ act, step }, speech, helpShown) {
+    const savedVoice = profile?.voice?.name;
+    const remembered = { type: 'read_on_device', what: savedVoice ? 'имя и голос' : 'имя' };
+    const help = helpShown ? [{ type: 'shown_help', topic: 'как добавить русский голос' }] : [];
+    switch (act) {
+      case 'recognized':
+        await record(act, { name: profile.name, voiceName: currentVoice?.name }, withSpeech([remembered], speech), 'Би поздоровался по имени.');
+        break;
+      case 'text_forced':
+        await record(act, { speechSupported: speechSupported() }, help, 'Знакомство продолжается перепиской.');
+        break;
+      case 'voice_missing': {
+        const offer = step === 'chooseVoice' ? [{ type: 'shown_offer', offer: 'выбрать другой голос' }] : [];
+        await record(act, { voiceName: savedVoice, canSpeak: voices.length > 0 }, [remembered, ...offer, ...help],
+          step === 'chooseVoice' ? 'Ждёт выбора другого голоса.' : 'Би пишет текстом.');
+        break;
+      }
+      case 'voice_offered':
+        await record(act, { name: profile.name }, [remembered, { type: 'shown_offer', offer: 'выбрать голос или остаться в переписке' }], 'Ждёт выбора.');
+        break;
+    }
   }
 
   async function recheckVoices() {
@@ -185,6 +262,7 @@ export function initChat({ onProfileChange }) {
     if (voices.length) {
       await biSay([prompts.voiceFound]);
       setStep('chooseVoice');
+      await record('voice_found', {}, [{ type: 'shown_offer', offer: 'выбрать голос' }], `Найдено русских голосов: ${voices.length}.`);
     } else {
       await biSay([prompts.voiceStillMissing]);
     }
@@ -215,6 +293,7 @@ export function initChat({ onProfileChange }) {
     profile = null;
     mode = null;
     currentVoice = null;
+    ratingEventId = null;
     started = false;
     log.replaceChildren();
     onProfileChange?.(null);
@@ -245,6 +324,9 @@ export function initChat({ onProfileChange }) {
 
   textModeButton.addEventListener('click', chooseTextMode);
   document.getElementById('chat-voice-recheck').addEventListener('click', recheckVoices);
+  for (const button of ratingPanel.querySelectorAll('button[data-answer]')) {
+    button.addEventListener('click', () => rate(button.dataset.answer));
+  }
   nameForm.addEventListener('submit', submitName);
   document.getElementById('chat-back').addEventListener('click', () => (history.state?.chat ? history.back() : close()));
   document.getElementById('chat-change-voice').addEventListener('click', changeVoice);

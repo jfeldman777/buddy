@@ -1,0 +1,49 @@
+<!doctype html>
+<html lang="ru">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <title>Журнал поступков Би — Buddy</title>
+  <meta name="description" content="Что Би сделал и почему: объяснения Би, действия программы, проверка по декларациям и ваши оценки.">
+  <meta name="theme-color" content="#28ff37">
+  <link rel="manifest" href="manifest.webmanifest">
+  <link rel="icon" type="image/png" sizes="32x32" href="icons/favicon-32.png">
+  <link rel="apple-touch-icon" href="icons/apple-touch-icon.png">
+  <link rel="stylesheet" href="styles.css">
+  <script type="module" src="journal-page.js"></script>
+</head>
+<body>
+  <main>
+    <p class="back"><a href="./">← Buddy</a></p>
+    <h1>Журнал поступков Би</h1>
+    <p class="lead">Что Би сделал и почему. Журнал хранится только на этом устройстве и никуда не отправляется.</p>
+    <p class="note">Если удалить Buddy, очистить данные браузера или сменить телефон, журнал пропадёт. Чтобы сохранить копию, нажмите «Экспорт».</p>
+
+    <div class="journal-toolbar">
+      <button type="button" class="btn btn-primary" id="journal-export">Экспорт</button>
+      <button type="button" class="btn btn-secondary" id="journal-clear">Удалить журнал</button>
+    </div>
+    <p id="journal-status" class="status" role="status" hidden></p>
+
+    <details class="card journal-legend">
+      <summary>Как читать запись</summary>
+      <ul>
+        <li><strong>Объяснение Би</strong> — как Би сам объясняет свой поступок: ситуация, цель, решение, мотив и декларации, на которые он ссылается.</li>
+        <li><strong>Что сделала программа</strong> — факты, которые записала программа, а не Би: что сохранено, что показано, что отправлено.</li>
+        <li><strong>Проверка по декларациям</strong> — D1 и D2 проверяет программа по фактам. Остальные может проверить только человек. Если объяснение Би расходится с фактами, это нарушение.</li>
+        <li><strong>Ваша оценка</strong> — «Да», «Нет» или «Не знаю» и комментарий. Оценка «Нет» — не обязательно нарушение: партнёр по трудным задачам может предлагать спорное.</li>
+      </ul>
+    </details>
+
+    <p id="journal-empty" class="card note" hidden>Записей пока нет. Они появятся после знакомства с Би.</p>
+    <ol id="journal-list" class="journal-list"></ol>
+  </main>
+
+  <footer>
+    <a href="./">Buddy</a>
+    <a href="declarations.html">Декларации Би</a>
+    <a href="https://github.com/jfeldman777/buddy">Исходный код</a>
+    <span>Alpha 0.01</span>
+  </footer>
+</body>
+</html>

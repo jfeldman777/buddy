@@ -1,10 +1,13 @@
 // Bump CACHE_VERSION whenever the app shell changes, so installed clients drop the old cache.
-const CACHE_VERSION = 'buddy-v3';
+const CACHE_VERSION = 'buddy-v4';
 
 const APP_SHELL = [
   './',
   'index.html',
   'declarations.html',
+  'journal.html',
+  'journal.js',
+  'journal-page.js',
   'styles.css',
   'app.js',
   'pwa.js',

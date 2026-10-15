@@ -40,6 +40,7 @@
           <div class="chat-menu-items">
             <button type="button" id="chat-change-voice">Сменить голос</button>
             <button type="button" id="chat-change-name">Сменить имя</button>
+            <a href="journal.html" id="chat-journal">Журнал Би</a>
             <button type="button" id="chat-forget">Удалить мои данные</button>
           </div>
         </details>
@@ -90,7 +91,12 @@
         <input id="chat-name" name="name" type="text" autocomplete="nickname" maxlength="40" enterkeyhint="send" placeholder="Имя">
         <button type="submit" class="btn btn-primary">Ответить</button>
       </form>
-      <p id="chat-idle" class="chat-panel note" hidden>Разговор с Би откроется в следующих версиях. Имя и выбор голоса хранятся только на этом устройстве.</p>
+      <div id="chat-rating" class="chat-panel rating-buttons" role="group" aria-label="Оценка" hidden>
+        <button type="button" class="btn btn-secondary btn-small" data-answer="yes">Да</button>
+        <button type="button" class="btn btn-secondary btn-small" data-answer="no">Нет</button>
+        <button type="button" class="btn btn-secondary btn-small" data-answer="unsure">Не знаю</button>
+      </div>
+      <p id="chat-idle" class="chat-panel note" hidden>Разговор с Би откроется в следующих версиях. Имя и выбор голоса хранятся только на этом устройстве. Что Би сделал и почему — в <a href="journal.html">журнале поступков Би</a>.</p>
     </section>
 
     <section id="install" class="card">
@@ -149,12 +155,13 @@
     <section class="card">
       <h2>Ваши данные</h2>
       <p>История разговоров и журнал поступков Би хранятся на вашем устройстве. Разработчик получает только то, что вы сами решите отправить.</p>
-      <p>Как Би обязуется себя вести — в <a href="declarations.html">декларациях Би</a>.</p>
+      <p>Как Би обязуется себя вести — в <a href="declarations.html">декларациях Би</a>. Что он сделал и почему — в <a href="journal.html">журнале поступков Би</a>.</p>
     </section>
   </main>
 
   <footer>
     <a href="declarations.html">Декларации Би</a>
+    <a href="journal.html">Журнал Би</a>
     <a href="https://github.com/jfeldman777/buddy">Исходный код</a>
     <span>Alpha 0.01</span>
   </footer>

@@ -2,7 +2,9 @@
 // If IndexedDB is unavailable (some private modes), falls back to memory and reports persistent: false.
 
 const DB_NAME = 'buddy';
-const DB_VERSION = 1;
+const DB_VERSION = 2;
+// Journal parts live in separate stores keyed by eventId, so Bi's explanation can never overwrite program facts.
+const JOURNAL_STORES = ['events', 'explanations', 'actions', 'compliance', 'ratings'];
 
 let storagePromise = null;
 
@@ -40,6 +42,9 @@ function openDb() {
       const db = req.result;
       if (!db.objectStoreNames.contains('profile')) db.createObjectStore('profile');
       if (!db.objectStoreNames.contains('messages')) db.createObjectStore('messages', { keyPath: 'id', autoIncrement: true });
+      for (const name of JOURNAL_STORES) {
+        if (!db.objectStoreNames.contains(name)) db.createObjectStore(name, { keyPath: 'eventId' });
+      }
     };
     req.onsuccess = () => {
       const db = req.result;
@@ -97,6 +102,45 @@ function idbStorage(db) {
       });
     },
 
+    addJournalEntry({ event, explanation, actions, compliance }) {
+      return new Promise((resolve, reject) => {
+        const tx = db.transaction(['events', 'explanations', 'actions', 'compliance'], 'readwrite');
+        tx.objectStore('events').add(event);
+        tx.objectStore('explanations').add(explanation);
+        tx.objectStore('actions').add(actions);
+        tx.objectStore('compliance').add(compliance);
+        tx.oncomplete = () => resolve(event.eventId);
+        tx.onerror = () => reject(tx.error);
+        tx.onabort = () => reject(tx.error);
+      });
+    },
+
+    rateEvent(eventId, rating) {
+      return request(store('ratings', 'readwrite').put({ eventId, ...rating }));
+    },
+
+    readJournal() {
+      return new Promise((resolve, reject) => {
+        const tx = db.transaction(JOURNAL_STORES);
+        const parts = {};
+        for (const name of JOURNAL_STORES) {
+          const req = tx.objectStore(name).getAll();
+          req.onsuccess = () => (parts[name] = req.result);
+        }
+        tx.oncomplete = () => resolve({ events: parts.events, explanations: parts.explanations, actions: parts.actions, compliance: parts.compliance, ratings: parts.ratings });
+        tx.onerror = () => reject(tx.error);
+      });
+    },
+
+    clearJournal() {
+      return new Promise((resolve, reject) => {
+        const tx = db.transaction(JOURNAL_STORES, 'readwrite');
+        for (const name of JOURNAL_STORES) tx.objectStore(name).clear();
+        tx.oncomplete = () => resolve();
+        tx.onerror = () => reject(tx.error);
+      });
+    },
+
     async deleteAll() {
       db.close();
       storagePromise = null;
@@ -105,9 +149,14 @@ function idbStorage(db) {
   };
 }
 
+function emptyJournal() {
+  return Object.fromEntries(JOURNAL_STORES.map((name) => [name, new Map()]));
+}
+
 function memoryStorage() {
   let profile = null;
   let messages = [];
+  let journal = emptyJournal();
   return {
     persistent: false,
     async getProfile() {
@@ -123,9 +172,26 @@ function memoryStorage() {
     async recentMessages(limit) {
       return messages.slice(-limit);
     },
+    async addJournalEntry({ event, explanation, actions, compliance }) {
+      journal.events.set(event.eventId, event);
+      journal.explanations.set(event.eventId, explanation);
+      journal.actions.set(event.eventId, actions);
+      journal.compliance.set(event.eventId, compliance);
+      return event.eventId;
+    },
+    async rateEvent(eventId, rating) {
+      journal.ratings.set(eventId, { eventId, ...rating });
+    },
+    async readJournal() {
+      return Object.fromEntries(JOURNAL_STORES.map((name) => [name, [...journal[name].values()]]));
+    },
+    async clearJournal() {
+      journal = emptyJournal();
+    },
     async deleteAll() {
       profile = null;
       messages = [];
+      journal = emptyJournal();
       storagePromise = null;
     },
   };
