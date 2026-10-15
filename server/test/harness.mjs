@@ -23,7 +23,9 @@ export async function createEnv({ limits = {} } = {}) {
     CLOCK: () => clock,
     FETCH: async (url, init) => {
       turnstileCalls.push({ url, token: init.body.get('response'), secret: init.body.get('secret') });
-      return Response.json({ success: init.body.get('response') === 'human' });
+      const token = init.body.get('response');
+      if (token === 'revoked-secret') return Response.json({ success: false, 'error-codes': ['invalid-input-secret'] });
+      return Response.json({ success: token === 'human', 'error-codes': token === 'human' ? [] : ['invalid-input-response'] });
     },
   };
   return {

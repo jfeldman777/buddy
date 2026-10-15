@@ -43,7 +43,14 @@ export async function verifyTurnstile(env, token, ip) {
   } catch {
     throw new HttpError(503, 'turnstile_unavailable', 'Проверка от ботов сейчас недоступна. Попробуйте позже.');
   }
-  if (!result.success) throw new HttpError(403, 'turnstile_failed', 'Проверка от ботов не пройдена. Обновите страницу и попробуйте ещё раз.');
+  if (result.success) return;
+  const codes = Array.isArray(result['error-codes']) ? result['error-codes'] : [];
+  // A wrong or revoked secret is the server's fault, not the visitor's.
+  if (codes.includes('invalid-input-secret') || codes.includes('missing-input-secret')) {
+    console.error('Turnstile secret rejected:', codes.join(','));
+    throw new HttpError(503, 'unconfigured', 'Сервер не настроен: проверка от ботов отклонила ключ сервера.');
+  }
+  throw new HttpError(403, 'turnstile_failed', 'Проверка от ботов не пройдена. Обновите страницу и попробуйте ещё раз.');
 }
 
 export async function assertRecoverOpen(env) {

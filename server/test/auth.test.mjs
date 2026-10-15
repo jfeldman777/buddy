@@ -98,6 +98,9 @@ test('создание учётной записи требует Turnstile; б�
   assert.equal((await api.call('POST', '/auth/register/options', { body: { turnstileToken: 'bot' } })).status, 403);
   assert.equal((await api.call('POST', '/auth/register/code-only', { body: { turnstileToken: 'bot' } })).status, 403);
   assert.equal(api.turnstileCalls.at(-1).secret, 'test-turnstile-secret');
+  const revoked = await api.call('POST', '/auth/register/code-only', { body: { turnstileToken: 'revoked-secret' } });
+  assert.equal(revoked.status, 503, 'неверный ключ сервера — не вина посетителя');
+  assert.equal(revoked.data.error, 'unconfigured');
   delete api.env.TURNSTILE_SECRET;
   assert.equal((await api.call('POST', '/auth/register/options', { body: { turnstileToken: 'human' } })).status, 503);
   assert.equal(api.sql('SELECT COUNT(*) n FROM users')[0].n, 0);
