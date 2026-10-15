@@ -1,0 +1,20 @@
+{
+  "name": "buddy",
+  "version": "0.0.1",
+  "private": true,
+  "description": "Buddy — персональный ИИ-партнёр. Опыт трудных побед.",
+  "type": "module",
+  "engines": {
+    "node": ">=20"
+  },
+  "scripts": {
+    "serve": "node tools/serve.mjs",
+    "qr": "node tools/make-qr.mjs",
+    "test": "node --test \"tests/**/*.test.mjs\""
+  },
+  "devDependencies": {
+    "jsqr": "^1.4.0",
+    "pngjs": "^7.0.0",
+    "qrcode": "^1.5.4"
+  }
+}

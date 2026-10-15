@@ -1,0 +1,15 @@
+node_modules/
+
+# Secrets for local Cloudflare Worker development
+.dev.vars
+.env
+.env.*
+
+# Original Word documents stay local; Markdown versions live in docs/
+*.docx
+~$*
+/logo.png
+
+.wrangler/
+.DS_Store
+Thumbs.db

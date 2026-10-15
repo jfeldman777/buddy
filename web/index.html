@@ -1,0 +1,105 @@
+<!doctype html>
+<html lang="ru">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <title>Buddy — Опыт трудных побед</title>
+  <meta name="description" content="Би — ваш ИИ-партнёр. Он помогает справляться с трудностями, находить решения и приобретать собственный опыт побед.">
+  <meta name="theme-color" content="#28ff37">
+  <link rel="manifest" href="manifest.webmanifest">
+  <link rel="icon" type="image/png" sizes="32x32" href="icons/favicon-32.png">
+  <link rel="icon" type="image/png" sizes="192x192" href="icons/icon-192.png">
+  <link rel="apple-touch-icon" href="icons/apple-touch-icon.png">
+  <meta name="mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-title" content="Buddy">
+  <meta name="apple-mobile-web-app-status-bar-style" content="default">
+  <link rel="stylesheet" href="styles.css">
+  <script type="module" src="app.js"></script>
+</head>
+<body>
+  <main>
+    <header class="hero">
+      <img class="hero-icon" src="icons/icon-192.png" width="96" height="96" alt="">
+      <h1>Buddy</h1>
+      <p class="slogan">Опыт трудных побед</p>
+      <p class="lead">Би — ваш ИИ-партнёр. Он помогает справляться с трудностями, находить решения и приобретать собственный опыт побед.</p>
+      <div class="actions">
+        <button type="button" class="btn btn-primary" id="meet-button" aria-controls="meet" aria-expanded="false">Познакомиться с Би</button>
+        <button type="button" class="btn btn-secondary" id="install-button">Установить Buddy</button>
+      </div>
+    </header>
+
+    <section id="meet" class="card" hidden>
+      <h2>Знакомство с Би</h2>
+      <p>Би готовится к первой встрече. В следующей версии он сам начнёт разговор: предложит выбрать голос, которым будет говорить, и спросит, как вас называть.</p>
+      <p>Знакомство будет бесплатным и без регистрации.</p>
+    </section>
+
+    <section id="install" class="card">
+      <h2>Установка</h2>
+      <p>Buddy работает прямо в браузере — устанавливать не обязательно. Установка добавит значок на экран и позволит открывать Buddy как приложение.</p>
+      <p id="install-status" class="status" hidden></p>
+      <button type="button" class="btn btn-primary" id="install-prompt-button" hidden>Установить сейчас</button>
+      <div class="platforms">
+        <details data-platform="ios">
+          <summary>iPhone и iPad</summary>
+          <ol>
+            <li>Откройте эту страницу в Safari.</li>
+            <li>Нажмите «Поделиться» — квадрат со стрелкой вверх.</li>
+            <li>Выберите «На экран „Домой“» и нажмите «Добавить».</li>
+          </ol>
+          <p class="note">В iOS 16.4 и новее этот пункт есть и в меню «Поделиться» браузеров Chrome и Edge. Если его нет — откройте страницу в Safari.</p>
+        </details>
+        <details data-platform="android">
+          <summary>Android</summary>
+          <ol>
+            <li>Chrome: меню ⋮ → «Установить приложение» или «Добавить на главный экран».</li>
+            <li>Samsung Internet: меню ☰ → «Добавить страницу на» → «Главный экран».</li>
+            <li>Firefox: меню ⋮ → «Установить».</li>
+          </ol>
+          <p class="note">Если браузер предлагает установку сам, на этой странице появится кнопка «Установить сейчас».</p>
+        </details>
+        <details data-platform="desktop">
+          <summary>Компьютер</summary>
+          <ol>
+            <li>Chrome и Edge: значок установки в адресной строке или меню → «Установить Buddy».</li>
+            <li>Safari на Mac (macOS Sonoma и новее): «Файл» → «Добавить в Dock».</li>
+            <li>В остальных браузерах Buddy работает без установки, на вкладке.</li>
+          </ol>
+        </details>
+      </div>
+    </section>
+
+    <section class="card qr">
+      <h2>Открыть на смартфоне</h2>
+      <img src="qr.svg" width="200" height="200" alt="QR-код со ссылкой на Buddy: jfeldman777.github.io/buddy">
+      <p>Наведите камеру телефона на код или откройте<br><a href="https://jfeldman777.github.io/buddy/">jfeldman777.github.io/buddy</a></p>
+    </section>
+
+    <section class="card">
+      <h2>Условия работы и оплаты</h2>
+      <ul>
+        <li><strong>Знакомство с Би</strong> — бесплатно и без регистрации.</li>
+        <li><strong>Пробный разговор с ИИ</strong> — бесплатно, в небольшом объёме.</li>
+        <li><strong>Дальше нужен бюджет на ИИ</strong>: $5, $10 или $15. Его можно оплатить самому — переводом разработчику, который подтверждает платёж вручную. Или попросить разработчика оплатить участие — тогда он рассматривает просьбу и сам назначает лимит.</li>
+        <li>Бюджет тратится только на запросы к ИИ. Вы всегда видите лимит, расход и остаток. Лимит никогда не увеличивается сам.</li>
+        <li>Условия возврата неиспользованных средств будут показаны до перевода денег.</li>
+      </ul>
+      <p class="note">Сейчас идёт подготовка альфа-версии: разговор с ИИ и оплата пока не открыты.</p>
+    </section>
+
+    <section class="card">
+      <h2>Ваши данные</h2>
+      <p>История разговоров и журнал поступков Би хранятся на вашем устройстве. Разработчик получает только то, что вы сами решите отправить.</p>
+      <p>Как Би обязуется себя вести — в <a href="declarations.html">декларациях Би</a>.</p>
+    </section>
+  </main>
+
+  <footer>
+    <a href="declarations.html">Декларации Би</a>
+    <a href="https://github.com/jfeldman777/buddy">Исходный код</a>
+    <span>Alpha 0.01</span>
+  </footer>
+</body>
+</html>
