@@ -8,6 +8,7 @@ import QRCode from 'qrcode';
 import jsQR from 'jsqr';
 import { PNG } from 'pngjs';
 import { SITE_URL, QR_OPTIONS, makeQrSvg } from '../tools/make-qr.mjs';
+import { nextVersion } from '../tools/bump-version.mjs';
 
 const ROOT = fileURLToPath(new URL('..', import.meta.url));
 const WEB = join(ROOT, 'web');
@@ -76,8 +77,8 @@ test('D2: код сайта не отправляет данные по сети
   for (const file of (await readdir(WEB)).filter((f) => f.endsWith('.js') && f !== 'sw.js')) {
     const text = await read(`web/${file}`);
     assert.doesNotMatch(text, /XMLHttpRequest|sendBeacon|WebSocket|method:\s*['"]POST/i, `${file} отправляет данные`);
-    for (const call of text.matchAll(/fetch\(([^)]*)\)/g)) {
-      assert.equal(call[1], "'declarations.json'", `${file}: неожиданный запрос fetch(${call[1]})`);
+    for (const call of text.matchAll(/fetch\(([^,)]*)/g)) {
+      assert.ok(["'declarations.json'", "'version.json'"].includes(call[1].trim()), `${file}: неожиданный запрос fetch(${call[1]})`);
     }
   }
 });
@@ -138,7 +139,7 @@ test('значок: ярко-зелёный квадрат, белый круг 
 
 test('service worker кэширует только существующие файлы', async () => {
   const sw = await read('web/sw.js');
-  assert.match(sw, /const CACHE_VERSION = 'buddy-v\d+'/);
+  assert.match(sw, /const CACHE_VERSION = `buddy-\$\{VERSION\}`/);
   const shell = [...sw.match(/const APP_SHELL = \[([\s\S]*?)\];/)[1].matchAll(/'([^']+)'/g)].map((m) => m[1]);
   assert.ok(shell.length > 5);
   for (const file of shell) {
@@ -147,6 +148,22 @@ test('service worker кэширует только существующие фа
   for (const file of (await readdir(WEB)).filter((f) => /\.(js|html|css|json|webmanifest)$/.test(f) && f !== 'sw.js')) {
     assert.ok(shell.includes(file), `sw.js: ${file} не попадёт в офлайн-кэш`);
   }
+});
+
+test('номер версии одинаковый в version.json, sw.js и на всех страницах', async () => {
+  const { version } = JSON.parse(await read('web/version.json'));
+  assert.match(version, /^\d{3}$/);
+  assert.equal((await read('web/sw.js')).match(/const VERSION = '(\d{3})';/)?.[1], version, 'sw.js: другая версия — выполните npm run bump');
+  for (const page of (await readdir(WEB)).filter((f) => f.endsWith('.html'))) {
+    const html = await read(`web/${page}`);
+    const shown = [...html.matchAll(/<span data-version>([^<]*)<\/span>/g)].map((m) => m[1]);
+    assert.ok(shown.length > 0, `${page}: номер версии не показан`);
+    for (const value of shown) assert.equal(value, version, `${page}: показана версия ${value}, а не ${version}`);
+    assert.match(html, /data-check-update/, `${page}: нет кнопки «Проверить обновления»`);
+  }
+  assert.equal(nextVersion('003'), '004');
+  assert.equal(nextVersion('099'), '100');
+  assert.throws(() => nextVersion('v4'));
 });
 
 test('QR-код ведёт на адрес сайта', async () => {

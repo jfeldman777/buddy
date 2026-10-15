@@ -1,9 +1,11 @@
-// Bump CACHE_VERSION whenever the app shell changes, so installed clients drop the old cache.
-const CACHE_VERSION = 'buddy-v4';
+// Bump with `npm run bump` whenever the site changes: installed clients drop the old cache and see the new number.
+const VERSION = '003';
+const CACHE_VERSION = `buddy-${VERSION}`;
 
 const APP_SHELL = [
   './',
   'index.html',
+  'version.json',
   'declarations.html',
   'journal.html',
   'journal.js',
