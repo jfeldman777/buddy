@@ -44,6 +44,23 @@ test('стартовая страница содержит всё, что тре
   assert.match(html, /<link rel="manifest" href="manifest\.webmanifest">/);
 });
 
+test('на стартовой странице есть разговор с Би: выбор голоса, имя, настройки', async () => {
+  const html = await read('web/index.html');
+  for (const id of ['chat', 'chat-log', 'chat-voices', 'chat-text-mode', 'chat-name-form', 'chat-name', 'chat-change-voice', 'chat-change-name', 'chat-forget', 'welcome-back']) {
+    assert.match(html, new RegExp(`id="${id}"`), `нет элемента #${id}`);
+  }
+  assert.match(html, /Без голоса — только текст/);
+  const css = await read('web/styles.css');
+  assert.match(css, /\[hidden\]\s*\{\s*display:\s*none\s*!important;/, 'стили с display перекроют атрибут hidden');
+});
+
+test('D1: код сайта не обращается к микрофону и камере', async () => {
+  for (const file of (await readdir(WEB)).filter((f) => f.endsWith('.js') || f.endsWith('.html'))) {
+    const text = await read(`web/${file}`);
+    assert.doesNotMatch(text, /getUserMedia|SpeechRecognition|mediaDevices/, `${file} обращается к микрофону или камере`);
+  }
+});
+
 test('стартовая страница не обещает автоматическую установку', async () => {
   const html = await read('web/index.html');
   assert.doesNotMatch(html, /установится автоматически|автоматическ\w+ установк/i);
@@ -98,6 +115,9 @@ test('service worker кэширует только существующие фа
   assert.ok(shell.length > 5);
   for (const file of shell) {
     assert.ok(await exists(join(WEB, file === './' ? 'index.html' : file)), `sw.js: нет файла ${file}`);
+  }
+  for (const file of (await readdir(WEB)).filter((f) => /\.(js|html|css|json|webmanifest)$/.test(f) && f !== 'sw.js')) {
+    assert.ok(shell.includes(file), `sw.js: ${file} не попадёт в офлайн-кэш`);
   }
 });
 

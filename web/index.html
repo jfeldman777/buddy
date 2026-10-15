@@ -24,16 +24,37 @@
       <h1>Buddy</h1>
       <p class="slogan">Опыт трудных побед</p>
       <p class="lead">Би — ваш ИИ-партнёр. Он помогает справляться с трудностями, находить решения и приобретать собственный опыт побед.</p>
+      <p id="welcome-back" class="welcome" hidden></p>
       <div class="actions">
-        <button type="button" class="btn btn-primary" id="meet-button" aria-controls="meet" aria-expanded="false">Познакомиться с Би</button>
+        <button type="button" class="btn btn-primary" id="meet-button" aria-controls="chat">Познакомиться с Би</button>
         <button type="button" class="btn btn-secondary" id="install-button">Установить Buddy</button>
       </div>
     </header>
 
-    <section id="meet" class="card" hidden>
-      <h2>Знакомство с Би</h2>
-      <p>Би готовится к первой встрече. В следующей версии он сам начнёт разговор: предложит выбрать голос, которым будет говорить, и спросит, как вас называть.</p>
-      <p>Знакомство будет бесплатным и без регистрации.</p>
+    <section id="chat" class="chat" hidden aria-label="Разговор с Би">
+      <header class="chat-header">
+        <button type="button" class="link-button" id="chat-back">← Buddy</button>
+        <h2>Би</h2>
+        <details class="chat-menu" id="chat-menu">
+          <summary>Настройки</summary>
+          <div class="chat-menu-items">
+            <button type="button" id="chat-change-voice">Сменить голос</button>
+            <button type="button" id="chat-change-name">Сменить имя</button>
+            <button type="button" id="chat-forget">Удалить мои данные</button>
+          </div>
+        </details>
+      </header>
+      <ol id="chat-log" class="chat-log" aria-live="polite"></ol>
+      <div id="chat-voices" class="chat-panel" hidden>
+        <ul id="chat-voice-list" class="voice-list"></ul>
+        <button type="button" class="btn btn-secondary" id="chat-text-mode">Без голоса — только текст</button>
+      </div>
+      <form id="chat-name-form" class="chat-panel chat-form" hidden>
+        <label for="chat-name" class="visually-hidden">Как Би будет к вам обращаться</label>
+        <input id="chat-name" name="name" type="text" autocomplete="nickname" maxlength="40" enterkeyhint="send" placeholder="Имя">
+        <button type="submit" class="btn btn-primary">Ответить</button>
+      </form>
+      <p id="chat-idle" class="chat-panel note" hidden>Разговор с Би откроется в следующих версиях. Имя и выбор голоса хранятся только на этом устройстве.</p>
     </section>
 
     <section id="install" class="card">

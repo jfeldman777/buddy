@@ -1,9 +1,11 @@
 import { registerServiceWorker, detectPlatform, isStandalone } from './pwa.js';
+import { initChat } from './chat.js';
+import { openStorage } from './storage.js';
 
 registerServiceWorker();
 
 const meetButton = document.getElementById('meet-button');
-const meetSection = document.getElementById('meet');
+const welcomeBack = document.getElementById('welcome-back');
 const installButton = document.getElementById('install-button');
 const installSection = document.getElementById('install');
 const installStatus = document.getElementById('install-status');
@@ -11,11 +13,23 @@ const installPromptButton = document.getElementById('install-prompt-button');
 
 let deferredInstallPrompt = null;
 
-meetButton.addEventListener('click', () => {
-  meetSection.hidden = false;
-  meetButton.setAttribute('aria-expanded', 'true');
-  meetSection.scrollIntoView({ behavior: 'smooth', block: 'start' });
-});
+function showProfile(profile) {
+  if (profile?.name) {
+    welcomeBack.textContent = `С возвращением, ${profile.name}!`;
+    welcomeBack.hidden = false;
+    meetButton.textContent = 'Продолжить с Би';
+  } else {
+    welcomeBack.hidden = true;
+    meetButton.textContent = 'Познакомиться с Би';
+  }
+}
+
+const chat = initChat({ onProfileChange: showProfile });
+
+meetButton.addEventListener('click', () => chat.open({ fromGesture: true }));
+if (location.hash === '#bi') chat.open();
+
+openStorage().then((storage) => storage.getProfile()).then(showProfile).catch((error) => console.warn(error));
 
 const platform = detectPlatform();
 installSection.querySelector(`details[data-platform="${platform}"]`)?.setAttribute('open', '');

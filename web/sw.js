@@ -1,5 +1,5 @@
 // Bump CACHE_VERSION whenever the app shell changes, so installed clients drop the old cache.
-const CACHE_VERSION = 'buddy-v1';
+const CACHE_VERSION = 'buddy-v2';
 
 const APP_SHELL = [
   './',
@@ -8,6 +8,10 @@ const APP_SHELL = [
   'styles.css',
   'app.js',
   'pwa.js',
+  'chat.js',
+  'dialogue.js',
+  'storage.js',
+  'speech.js',
   'declarations.js',
   'declarations.json',
   'manifest.webmanifest',
@@ -31,12 +35,18 @@ self.addEventListener('activate', (event) => {
 });
 
 // Network first, cache as offline fallback: online users always get the current version.
+// cache: 'no-cache' revalidates with the server, bypassing GitHub Pages' 10-minute HTTP cache.
+// A navigate Request cannot be re-created with init options, so navigations are fetched by URL.
+function fetchFresh(request) {
+  return request.mode === 'navigate' ? fetch(request.url, { cache: 'no-cache' }) : fetch(request, { cache: 'no-cache' });
+}
+
 self.addEventListener('fetch', (event) => {
   const { request } = event;
   if (request.method !== 'GET' || new URL(request.url).origin !== self.location.origin) return;
 
   event.respondWith(
-    fetch(request)
+    fetchFresh(request)
       .then((response) => {
         if (response.ok) {
           const copy = response.clone();
