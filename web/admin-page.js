@@ -17,6 +17,7 @@ let session = null;
 function showStatus(text) {
   status.textContent = text;
   status.hidden = !text;
+  if (text) status.scrollIntoView({ block: 'nearest', behavior: 'smooth' });
 }
 
 const roles = { user: 'пользователь', admin: 'администратор' };
