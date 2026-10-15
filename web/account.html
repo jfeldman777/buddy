@@ -3,7 +3,7 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
-  <title>Учётная запись — Buddy</title>
+  <title>Вход — Buddy</title>
   <meta name="description" content="Вход в Buddy по passkey или коду восстановления.">
   <meta name="theme-color" content="#28ff37">
   <link rel="manifest" href="manifest.webmanifest">
@@ -15,8 +15,8 @@
 <body>
   <main>
     <p class="back"><a href="./">← Buddy</a></p>
-    <h1>Учётная запись</h1>
-    <p class="lead">Учётная запись нужна, чтобы входить на сервер Buddy. Позже через неё будет работать оплата.</p>
+    <h1>Вход</h1>
+    <p class="lead">Вход нужен тем, у кого уже есть учётная запись Buddy. Знакомство с Би, голос и журнал работают без входа.</p>
     <p class="note">На сервер попадают только данные для входа: открытая часть ключа passkey и отпечаток кода восстановления. Имя, разговоры с Би и журнал остаются на этом устройстве и на сервер не отправляются.</p>
 
     <p id="account-status" class="status" role="status" hidden></p>
@@ -35,13 +35,12 @@
     </section>
 
     <section id="account-signed-out" class="card" hidden>
-      <h2>Вход</h2>
-      <p>Passkey — это вход по отпечатку пальца, лицу или PIN-коду вашего телефона или компьютера. Пароль не нужен, а на поддельном сайте passkey не сработает.</p>
-      <p id="account-no-passkey" class="note" hidden>Этот браузер не поддерживает passkey. Можно создать учётную запись только с кодом восстановления — см. ниже.</p>
+      <p>Войти можно отпечатком пальца, лицом или PIN-кодом телефона — это passkey. Пароль не нужен.</p>
+      <p id="account-no-passkey" class="note" hidden>Этот браузер не поддерживает passkey. Войти можно по коду восстановления.</p>
       <div class="account-actions">
-        <button type="button" class="btn btn-primary" id="account-create">Создать учётную запись</button>
-        <button type="button" class="btn btn-secondary" id="account-login">Войти с passkey</button>
+        <button type="button" class="btn btn-primary" id="account-login">Войти</button>
       </div>
+      <p class="note">Учётная запись появится, когда вы оформите доступ к разговору с Би. Если её ещё нет, входить пока не нужно.</p>
 
       <details class="account-more">
         <summary>Войти по коду восстановления</summary>
@@ -53,18 +52,25 @@
         <p class="note">Администратор входит только по passkey.</p>
       </details>
 
-      <details class="account-more">
-        <summary>Нет passkey на этом устройстве?</summary>
-        <p>Можно создать учётную запись только с кодом восстановления. Тогда код — единственный ключ: если потерять его, войти будет нельзя. Добавьте passkey, как только появится возможность.</p>
-        <button type="button" class="btn btn-secondary" id="account-create-code">Создать только с кодом</button>
-      </details>
+      <div id="account-create-block" class="account-more" hidden>
+        <h2>Новая учётная запись</h2>
+        <p>Passkey сохранится на этом устройстве, а вы получите код восстановления на случай потери телефона.</p>
+        <div class="account-actions">
+          <button type="button" class="btn btn-primary" id="account-create">Создать с passkey</button>
+        </div>
+        <details>
+          <summary>Нет passkey на этом устройстве?</summary>
+          <p>Можно создать учётную запись только с кодом восстановления. Тогда код — единственный ключ: если потерять его, войти будет нельзя. Добавьте passkey, как только появится возможность.</p>
+          <button type="button" class="btn btn-secondary" id="account-create-code">Создать только с кодом</button>
+        </details>
+      </div>
 
       <div id="account-turnstile" class="turnstile" hidden></div>
-      <p class="note">При создании учётной записи и входе по коду Cloudflare Turnstile проверяет, что это человек, а не программа.</p>
+      <p class="note">При входе по коду и создании учётной записи Cloudflare Turnstile проверяет, что это человек, а не программа.</p>
     </section>
 
     <section id="account-signed-in" class="card" hidden>
-      <h2>Вы вошли</h2>
+      <h2>Вы вошли в учётную запись</h2>
       <dl class="account-info">
         <dt>Номер</dt><dd id="account-id"></dd>
         <dt>Создана</dt><dd id="account-created"></dd>
@@ -86,7 +92,7 @@
     <a href="declarations.html">Декларации Би</a>
     <a href="journal.html">Журнал Би</a>
     <a href="https://github.com/jfeldman777/buddy">Исходный код</a>
-    <span>Alpha 0.01 · версия <span data-version>006</span></span>
+    <span>Alpha 0.01 · версия <span data-version>007</span></span>
     <button type="button" class="link-button" data-check-update>Проверить обновления</button>
   </footer>
 </body>

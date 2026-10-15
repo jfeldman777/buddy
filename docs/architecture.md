@@ -111,7 +111,7 @@ CORS не считается защитой: он ограничивает то�
 Сделано: учётные записи, passkey, коды восстановления, сессии, роль администратора, защита API. Бюджетов, оплаты и OpenAI на сервере пока нет (этапы 5–6).
 
 - Код — `server/src/`, схема — `server/migrations/`, настройки Worker — `server/wrangler.toml`. В D1 нет полей для имён, разговоров и журнала; код восстановления хранится только как HMAC, токен сессии — только как SHA-256. Это проверяют автотесты.
-- Клиент: `web/account.html` (создать, войти, восстановить, добавить passkey, новый код, выйти) и `web/admin.html`. На сервер ходит только `web/api.js`, и только с данными для входа; модули с разговором и журналом его не подключают — это проверяют автотесты.
+- Клиент: `web/account.html` — вход (passkey или код), добавить passkey, новый код, выйти; открывается из «Настроек» чата пунктом «Войти». Создание учётной записи показывается только по адресу `account.html?create`: на сайте ссылки на него нет, на этапе 5 его откроет Би при оформлении доступа. `web/admin.html` — панель администратора. На сервер ходит только `web/api.js`, и только с данными для входа; модули с разговором и журналом его не подключают — это проверяют автотесты.
 - Вход администратора: параметры passkey общие (`userVerification: preferred`), но сеанс администратора (12 часов, без продления) выдаётся только при роли `admin` в базе и подтверждённой личности (отпечаток, лицо, PIN). Без подтверждения администратор получает обычный сеанс без доступа к `/admin/*`.
 - Ограничения частоты: Cloudflare Rate Limiting (`LIMIT_ANON` по IP и группе эндпоинтов — 20 в минуту, `LIMIT_USER` по учётной записи — 60 в минуту) плюс счётчики в D1 для `/auth/recover`: 5 попыток в час с IP; 100 неудач за 10 минут по всему сервису ставят вход по коду на паузу на 30 минут.
 - Cron раз в 30 минут удаляет истёкшие challenge, сессии и старые счётчики.
@@ -128,7 +128,7 @@ CORS не считается защитой: он ограничивает то�
 5. `npx wrangler secret put TURNSTILE_SECRET --config server/wrangler.toml` — секретный ключ виджета; `npx wrangler secret put RECOVERY_PEPPER --config server/wrangler.toml` — случайная строка (например, `openssl rand -hex 32`). Pepper нельзя менять после запуска: старые коды восстановления перестанут подходить.
 6. `npx wrangler deploy --config server/wrangler.toml` — запомнить адрес `https://buddy-api.<subdomain>.workers.dev`.
 7. В `web/config.js` вписать этот адрес и публичный ключ виджета Turnstile, `npm run bump`, опубликовать сайт.
-8. Администратор: зарегистрироваться с passkey на `account.html`, взять номер учётной записи из `wrangler d1 execute buddy-db --remote --config server/wrangler.toml --command "SELECT id, created_at FROM users ORDER BY created_at DESC LIMIT 5"`, затем `--command "UPDATE users SET role='admin' WHERE id='…'; DELETE FROM recovery_codes WHERE user_id='…'"`. Выйти и войти снова по passkey.
+8. Администратор: зарегистрироваться с passkey на `https://jfeldman777.github.io/buddy/account.html?create`, взять номер учётной записи из `wrangler d1 execute buddy-db --remote --config server/wrangler.toml --command "SELECT id, created_at FROM users ORDER BY created_at DESC LIMIT 5"`, затем `--command "UPDATE users SET role='admin' WHERE id='…'; DELETE FROM recovery_codes WHERE user_id='…'"`. Выйти и войти снова по passkey.
 
 ## Бюджет и расходы
 

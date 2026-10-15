@@ -1,7 +1,7 @@
 import { registerServiceWorker } from './pwa.js';
 import { openStorage } from './storage.js';
 import { api } from './api.js';
-import { passkeysSupported } from './webauthn.js';
+import { passkeysSupported, PasskeyError } from './webauthn.js';
 import { humanCheck } from './turnstile.js';
 import {
   currentUser, signUpWithPasskey, signUpWithCode, signInWithPasskey, recoverWithCode, addPasskey, signOut,
@@ -94,7 +94,14 @@ $('account-create-code').addEventListener('click', () => act(async () => {
 }));
 
 $('account-login').addEventListener('click', () => act(async () => {
-  await signedInWith(await signInWithPasskey(storage), 'Вы вошли по passkey.');
+  try {
+    await signedInWith(await signInWithPasskey(storage), 'Вы вошли.');
+  } catch (error) {
+    if (error instanceof PasskeyError && error.code === 'cancelled') {
+      throw new PasskeyError(error.code, `${error.message} Если учётной записи ещё нет, входить пока не нужно.`);
+    }
+    throw error;
+  }
 }));
 
 recoverForm.addEventListener('submit', (event) => {
@@ -151,6 +158,8 @@ codeDone.addEventListener('click', () => {
 if (!api.configured) {
   $('account-unavailable').hidden = false;
 } else {
+  // Creating an account is offered only by a direct link (account.html?create): later Bi opens it when access is arranged.
+  $('account-create-block').hidden = !new URLSearchParams(location.search).has('create');
   $('account-no-passkey').hidden = passkeysSupported();
   for (const id of ['account-create', 'account-login']) $(id).hidden = !passkeysSupported();
   if (!storage.persistent) showStatus('Браузер не даёт сохранять данные — например, в приватном режиме. После закрытия страницы придётся войти снова.');

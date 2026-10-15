@@ -99,9 +99,17 @@ test('D2: разговоры, имя и журнал не попадают в м
 
 test('страница учётной записи: passkey, код восстановления, честное описание данных', async () => {
   const html = await read('web/account.html');
-  for (const id of ['account-create', 'account-login', 'account-recover-form', 'account-code', 'account-create-code', 'account-code-reveal', 'account-code-value', 'account-code-saved', 'account-code-done', 'account-add-passkey', 'account-new-code', 'account-logout', 'account-turnstile', 'account-unavailable']) {
+  for (const id of ['account-create', 'account-login', 'account-recover-form', 'account-code', 'account-create-code', 'account-create-block', 'account-code-reveal', 'account-code-value', 'account-code-saved', 'account-code-done', 'account-add-passkey', 'account-new-code', 'account-logout', 'account-turnstile', 'account-unavailable']) {
     assert.match(html, new RegExp(`id="${id}"`), `нет элемента #${id}`);
   }
+  assert.match(html, /id="account-create-block"[^>]*hidden/, 'создание учётной записи скрыто по умолчанию');
+  assert.match(await read('web/account-page.js'), /\.has\('create'\)/);
+  assert.match(html, /Если её ещё нет, входить пока не нужно/);
+  for (const page of ['index.html', 'journal.html', 'declarations.html']) {
+    const other = await read(`web/${page}`);
+    assert.doesNotMatch(other, /account\.html\?create|Учётная запись</, `${page}: создание учётной записи — только через Би`);
+  }
+  assert.match(await read('web/index.html'), /<a href="account\.html" id="chat-login">Войти<\/a>/, 'в Настройках есть «Войти»');
   assert.match(html, /Имя, разговоры с Би и журнал остаются на этом устройстве и на сервер не отправляются/);
   assert.match(html, /Код показывается один раз/);
   assert.match(html, /Cloudflare Turnstile/);
