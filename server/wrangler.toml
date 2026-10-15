@@ -1,0 +1,38 @@
+name = "buddy-api"
+main = "src/index.js"
+compatibility_date = "2026-10-01"
+
+# Secrets are set with `wrangler secret put` and never stored here:
+#   RECOVERY_PEPPER   — random string for HMAC of recovery codes (openssl rand -hex 32)
+#   TURNSTILE_SECRET  — secret key of the Turnstile widget
+# For local development they go to server/.dev.vars (see .dev.vars.example), which is not committed.
+
+[vars]
+RP_ID = "jfeldman777.github.io"
+RP_NAME = "Buddy"
+ALLOWED_ORIGINS = "https://jfeldman777.github.io"
+
+[[d1_databases]]
+binding = "DB"
+database_name = "buddy-db"
+# Replace with the id printed by `wrangler d1 create buddy-db`.
+database_id = "00000000-0000-0000-0000-000000000000"
+migrations_dir = "migrations"
+
+# Anonymous endpoints, per IP and endpoint group.
+[[ratelimits]]
+name = "LIMIT_ANON"
+namespace_id = "1001"
+simple = { limit = 20, period = 60 }
+
+# Signed-in requests, per account.
+[[ratelimits]]
+name = "LIMIT_USER"
+namespace_id = "1002"
+simple = { limit = 60, period = 60 }
+
+[triggers]
+crons = ["*/30 * * * *"]
+
+[observability]
+enabled = true

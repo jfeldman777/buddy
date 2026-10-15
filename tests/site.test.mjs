@@ -1,9 +1,9 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { readFile, readdir, access } from 'node:fs/promises';
-import { spawn } from 'node:child_process';
+import { spawn, execFileSync } from 'node:child_process';
 import { fileURLToPath } from 'node:url';
-import { join, relative } from 'node:path';
+import { join } from 'node:path';
 import QRCode from 'qrcode';
 import jsQR from 'jsqr';
 import { PNG } from 'pngjs';
@@ -73,14 +73,44 @@ test('журнал поступков Би: просмотр, экспорт, у
   assert.doesNotMatch(page, /fetch\((?!'declarations\.json')/, 'страница журнала ничего не отправляет по сети');
 });
 
-test('D2: код сайта не отправляет данные по сети', async () => {
+test('D2: на сервер Buddy ходит только api.js, остальной код ничего не отправляет', async () => {
   for (const file of (await readdir(WEB)).filter((f) => f.endsWith('.js') && f !== 'sw.js')) {
     const text = await read(`web/${file}`);
-    assert.doesNotMatch(text, /XMLHttpRequest|sendBeacon|WebSocket|method:\s*['"]POST/i, `${file} отправляет данные`);
+    assert.doesNotMatch(text, /XMLHttpRequest|sendBeacon|WebSocket/i, `${file} отправляет данные`);
+    if (!['api.js', 'config.js'].includes(file)) assert.doesNotMatch(text, /method:\s*['"]POST|API_BASE/i, `${file} обращается к серверу в обход api.js`);
+    const allowed = ["'declarations.json'", "'version.json'", ...(file === 'api.js' ? ['...args'] : [])];
     for (const call of text.matchAll(/fetch\(([^,)]*)/g)) {
-      assert.ok(["'declarations.json'", "'version.json'"].includes(call[1].trim()), `${file}: неожиданный запрос fetch(${call[1]})`);
+      assert.ok(allowed.includes(call[1].trim()), `${file}: неожиданный запрос fetch(${call[1]})`);
     }
   }
+});
+
+test('D2: разговоры, имя и журнал не попадают в модули, которые ходят на сервер', async () => {
+  const network = /from '\.\/(api|account|turnstile|config)\.js'/;
+  for (const file of ['app.js', 'chat.js', 'dialogue.js', 'speech.js', 'listen.js', 'storage.js', 'journal.js', 'journal-page.js', 'declarations.js', 'pwa.js']) {
+    assert.doesNotMatch(await read(`web/${file}`), network, `${file} подключает сетевой модуль`);
+  }
+  for (const file of ['api.js', 'account.js', 'account-page.js', 'admin-page.js', 'turnstile.js']) {
+    const text = await read(`web/${file}`);
+    assert.doesNotMatch(text, /getProfile|saveProfile|recentMessages|addMessage|readJournal|addJournalEntry/, `${file} читает личные данные`);
+  }
+  assert.doesNotMatch(await read('web/api.js'), /storage\.js/, 'api.js не должен иметь доступа к хранилищу');
+});
+
+test('страница учётной записи: passkey, код восстановления, честное описание данных', async () => {
+  const html = await read('web/account.html');
+  for (const id of ['account-create', 'account-login', 'account-recover-form', 'account-code', 'account-create-code', 'account-code-reveal', 'account-code-value', 'account-code-saved', 'account-code-done', 'account-add-passkey', 'account-new-code', 'account-logout', 'account-turnstile', 'account-unavailable']) {
+    assert.match(html, new RegExp(`id="${id}"`), `нет элемента #${id}`);
+  }
+  assert.match(html, /Имя, разговоры с Би и журнал остаются на этом устройстве и на сервер не отправляются/);
+  assert.match(html, /Код показывается один раз/);
+  assert.match(html, /Cloudflare Turnstile/);
+  const page = await read('web/account-page.js');
+  assert.doesNotMatch(page, /saveAccount\([^)]*recoveryCode/, 'код восстановления не сохраняется на устройстве');
+  assert.doesNotMatch(await read('web/account.js'), /recoveryCode/, 'код восстановления не сохраняется на устройстве');
+  const admin = await read('web/admin.html');
+  assert.match(admin, /noindex/);
+  assert.match(admin, /только по passkey/);
 });
 
 test('D1: к микрофону обращается только listen.js, камера не используется', async () => {
@@ -113,7 +143,7 @@ test('стартовая страница не обещает автоматич
 });
 
 test('все локальные ссылки страниц указывают на существующие файлы', async () => {
-  for (const page of ['index.html', 'declarations.html', 'journal.html']) {
+  for (const page of (await readdir(WEB)).filter((f) => f.endsWith('.html'))) {
     const html = await read(`web/${page}`);
     for (const ref of localRefs(html)) {
       assert.ok(await exists(join(WEB, ref)), `${page}: нет файла ${ref}`);
@@ -205,25 +235,22 @@ test('в репозитории нет секретов и оригиналов 
     /sk-[A-Za-z0-9_-]{20,}/,
     /\b\d{8,10}:[A-Za-z0-9_-]{35}\b/,
     /-----BEGIN [A-Z ]*PRIVATE KEY-----/,
-    /(OPENAI_API_KEY|TELEGRAM_BOT_TOKEN|RECOVERY_PEPPER)\s*[=:]\s*['"]?[A-Za-z0-9]/,
+    /(OPENAI_API_KEY|TELEGRAM_BOT_TOKEN|RECOVERY_PEPPER|TURNSTILE_SECRET)\s*[=:]\s*['"]?(?!test-)[A-Za-z0-9]/,
   ];
-  const skip = new Set(['node_modules', '.git']);
-  async function* walk(dir) {
-    for (const entry of await readdir(dir, { withFileTypes: true })) {
-      if (skip.has(entry.name)) continue;
-      const path = join(dir, entry.name);
-      if (entry.isDirectory()) yield* walk(path);
-      else yield path;
-    }
-  }
   const gitignore = await read('.gitignore');
   assert.match(gitignore, /^\*\.docx$/m);
   assert.match(gitignore, /^\.dev\.vars$/m);
-  for await (const file of walk(ROOT)) {
-    if (/\.(png|docx|ico)$/.test(file) || file.endsWith('package-lock.json')) continue;
-    const text = await readFile(file, 'utf8');
+  assert.match(gitignore, /^\.wrangler\/$/m);
+  // Everything git would commit: tracked files plus untracked ones that are not ignored.
+  const files = execFileSync('git', ['ls-files', '--cached', '--others', '--exclude-standard', '-z'], { cwd: ROOT, encoding: 'utf8' })
+    .split('\0').filter(Boolean);
+  assert.ok(files.includes('server/wrangler.toml'));
+  for (const file of files) {
+    assert.doesNotMatch(file, /\.docx$|(^|\/)\.dev\.vars$/, `${file} не должен попасть в репозиторий`);
+    if (/\.(png|ico)$/.test(file) || file.endsWith('package-lock.json') || !(await exists(join(ROOT, file)))) continue;
+    const text = await readFile(join(ROOT, file), 'utf8');
     for (const pattern of patterns) {
-      assert.doesNotMatch(text, pattern, `${relative(ROOT, file)}: похоже на секрет`);
+      assert.doesNotMatch(text, pattern, `${file}: похоже на секрет`);
     }
   }
 });

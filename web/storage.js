@@ -65,6 +65,19 @@ function idbStorage(db) {
       return (await request(store('profile').get('me'))) ?? null;
     },
 
+    // Sign-in token for the Buddy server. The recovery code is never stored.
+    async getAccount() {
+      return (await request(store('profile').get('account'))) ?? null;
+    },
+
+    saveAccount(account) {
+      return request(store('profile', 'readwrite').put(account, 'account'));
+    },
+
+    clearAccount() {
+      return request(store('profile', 'readwrite').delete('account'));
+    },
+
     saveProfile(patch) {
       return new Promise((resolve, reject) => {
         const tx = db.transaction('profile', 'readwrite');
@@ -155,12 +168,22 @@ function emptyJournal() {
 
 function memoryStorage() {
   let profile = null;
+  let account = null;
   let messages = [];
   let journal = emptyJournal();
   return {
     persistent: false,
     async getProfile() {
       return profile;
+    },
+    async getAccount() {
+      return account;
+    },
+    async saveAccount(next) {
+      account = next;
+    },
+    async clearAccount() {
+      account = null;
     },
     async saveProfile(patch) {
       profile = { createdAt: now(), ...profile, ...patch, updatedAt: now() };
@@ -190,6 +213,7 @@ function memoryStorage() {
     },
     async deleteAll() {
       profile = null;
+      account = null;
       messages = [];
       journal = emptyJournal();
       storagePromise = null;

@@ -586,6 +586,123 @@ body.chat-open footer {
   margin: 8px 0 0;
 }
 
+.account-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 12px;
+  margin-bottom: 12px;
+}
+
+.account-more {
+  border-top: 1px solid var(--line);
+  padding: 10px 0;
+}
+
+.account-more summary {
+  font-weight: 600;
+  cursor: pointer;
+}
+
+.account-more > :nth-child(2) {
+  margin-top: 10px;
+}
+
+.account-form {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  align-items: center;
+  margin-bottom: 8px;
+}
+
+.account-form label {
+  flex-basis: 100%;
+}
+
+.account-form input {
+  flex: 1;
+  min-width: 0;
+  font: inherit;
+  font-family: ui-monospace, Consolas, monospace;
+  text-transform: uppercase;
+  padding: 12px 16px;
+  border: 2px solid var(--ink);
+  border-radius: 999px;
+}
+
+.account-form input:focus-visible {
+  outline: 3px solid var(--green);
+  outline-offset: 2px;
+}
+
+.code-reveal {
+  border: 2px solid var(--green);
+  background: var(--green-soft);
+}
+
+.recovery-code {
+  font-family: ui-monospace, Consolas, monospace;
+  font-size: 1.35rem;
+  font-weight: 700;
+  letter-spacing: 0.04em;
+  background: var(--paper);
+  border: 1px dashed var(--ink);
+  border-radius: 10px;
+  padding: 12px;
+  text-align: center;
+  word-break: break-all;
+  user-select: all;
+}
+
+.checkbox {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+  margin: 4px 0 12px;
+}
+
+.checkbox input {
+  width: 22px;
+  height: 22px;
+}
+
+.turnstile {
+  margin: 12px 0;
+}
+
+.account-info {
+  display: grid;
+  grid-template-columns: auto 1fr;
+  gap: 4px 16px;
+  margin: 0 0 12px;
+}
+
+.account-info dt {
+  font-weight: 600;
+}
+
+.account-info dd {
+  margin: 0;
+}
+
+.table-scroll {
+  overflow-x: auto;
+}
+
+.admin-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 0.95rem;
+}
+
+.admin-table th,
+.admin-table td {
+  text-align: left;
+  padding: 6px 8px;
+  border-bottom: 1px solid var(--line);
+  white-space: nowrap;
+}
+
 footer {
   display: flex;
   flex-wrap: wrap;

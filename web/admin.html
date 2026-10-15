@@ -1,0 +1,51 @@
+<!doctype html>
+<html lang="ru">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <title>Администратор — Buddy</title>
+  <meta name="robots" content="noindex">
+  <meta name="theme-color" content="#28ff37">
+  <link rel="manifest" href="manifest.webmanifest">
+  <link rel="icon" type="image/png" sizes="32x32" href="icons/favicon-32.png">
+  <link rel="apple-touch-icon" href="icons/apple-touch-icon.png">
+  <link rel="stylesheet" href="styles.css">
+  <script type="module" src="admin-page.js"></script>
+</head>
+<body>
+  <main>
+    <p class="back"><a href="account.html">← Учётная запись</a></p>
+    <h1>Администратор</h1>
+    <p class="note">Вход администратора — только по passkey с отпечатком, лицом или PIN-кодом. Сеанс длится 12 часов. Каждый просмотр записывается в журнал действий администратора на сервере.</p>
+
+    <p id="admin-status" class="status" role="status" hidden></p>
+
+    <section id="admin-signed-out" class="card" hidden>
+      <p>Панель открыта только администратору.</p>
+      <button type="button" class="btn btn-primary" id="admin-login">Войти с passkey</button>
+    </section>
+
+    <section id="admin-panel" class="card" hidden>
+      <div class="journal-toolbar">
+        <button type="button" class="btn btn-secondary btn-small" id="admin-refresh">Обновить</button>
+        <button type="button" class="btn btn-secondary btn-small" id="admin-logout">Выйти</button>
+      </div>
+      <h2>Учётные записи <span id="admin-count"></span></h2>
+      <p class="note">Сервер хранит о человеке только это. Имён, разговоров и журналов здесь нет.</p>
+      <div class="table-scroll">
+        <table class="admin-table">
+          <thead><tr><th>Номер</th><th>Роль</th><th>Статус</th><th>Создана</th><th>Passkey</th></tr></thead>
+          <tbody id="admin-users"></tbody>
+        </table>
+      </div>
+    </section>
+  </main>
+
+  <footer>
+    <a href="./">Buddy</a>
+    <a href="https://github.com/jfeldman777/buddy">Исходный код</a>
+    <span>Alpha 0.01 · версия <span data-version>005</span></span>
+    <button type="button" class="link-button" data-check-update>Проверить обновления</button>
+  </footer>
+</body>
+</html>

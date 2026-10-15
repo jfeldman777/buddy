@@ -1,0 +1,93 @@
+<!doctype html>
+<html lang="ru">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <title>Учётная запись — Buddy</title>
+  <meta name="description" content="Вход в Buddy по passkey или коду восстановления.">
+  <meta name="theme-color" content="#28ff37">
+  <link rel="manifest" href="manifest.webmanifest">
+  <link rel="icon" type="image/png" sizes="32x32" href="icons/favicon-32.png">
+  <link rel="apple-touch-icon" href="icons/apple-touch-icon.png">
+  <link rel="stylesheet" href="styles.css">
+  <script type="module" src="account-page.js"></script>
+</head>
+<body>
+  <main>
+    <p class="back"><a href="./">← Buddy</a></p>
+    <h1>Учётная запись</h1>
+    <p class="lead">Учётная запись нужна, чтобы входить на сервер Buddy. Позже через неё будет работать оплата.</p>
+    <p class="note">На сервер попадают только данные для входа: открытая часть ключа passkey и отпечаток кода восстановления. Имя, разговоры с Би и журнал остаются на этом устройстве и на сервер не отправляются.</p>
+
+    <p id="account-status" class="status" role="status" hidden></p>
+    <p id="account-unavailable" class="card note" hidden>Учётные записи заработают, когда подключат сервер Buddy. Всё остальное работает и без них.</p>
+
+    <section id="account-code-reveal" class="card code-reveal" hidden>
+      <h2>Ваш код восстановления</h2>
+      <p class="recovery-code" id="account-code-value"></p>
+      <p>Сохраните код сейчас: запишите на бумаге или сохраните в менеджере паролей. Код показывается один раз. На сервере хранится только его отпечаток, по которому сам код узнать нельзя.</p>
+      <p class="note">Код нужен, если passkey пропадёт, например при смене телефона. Каждый код срабатывает один раз: после входа по коду вы получите новый.</p>
+      <div class="account-actions">
+        <button type="button" class="btn btn-secondary btn-small" id="account-code-copy">Скопировать</button>
+      </div>
+      <label class="checkbox"><input type="checkbox" id="account-code-saved"> Я сохранил код</label>
+      <button type="button" class="btn btn-primary" id="account-code-done" disabled>Готово</button>
+    </section>
+
+    <section id="account-signed-out" class="card" hidden>
+      <h2>Вход</h2>
+      <p>Passkey — это вход по отпечатку пальца, лицу или PIN-коду вашего телефона или компьютера. Пароль не нужен, а на поддельном сайте passkey не сработает.</p>
+      <p id="account-no-passkey" class="note" hidden>Этот браузер не поддерживает passkey. Можно создать учётную запись только с кодом восстановления — см. ниже.</p>
+      <div class="account-actions">
+        <button type="button" class="btn btn-primary" id="account-create">Создать учётную запись</button>
+        <button type="button" class="btn btn-secondary" id="account-login">Войти с passkey</button>
+      </div>
+
+      <details class="account-more">
+        <summary>Войти по коду восстановления</summary>
+        <form id="account-recover-form" class="account-form">
+          <label for="account-code">Код восстановления</label>
+          <input id="account-code" name="code" autocomplete="off" autocapitalize="characters" spellcheck="false" maxlength="40" placeholder="XXXXX-XXXXX-XXXXX-XXXXX" required>
+          <button type="submit" class="btn btn-primary">Войти</button>
+        </form>
+        <p class="note">Администратор входит только по passkey.</p>
+      </details>
+
+      <details class="account-more">
+        <summary>Нет passkey на этом устройстве?</summary>
+        <p>Можно создать учётную запись только с кодом восстановления. Тогда код — единственный ключ: если потерять его, войти будет нельзя. Добавьте passkey, как только появится возможность.</p>
+        <button type="button" class="btn btn-secondary" id="account-create-code">Создать только с кодом</button>
+      </details>
+
+      <div id="account-turnstile" class="turnstile" hidden></div>
+      <p class="note">При создании учётной записи и входе по коду Cloudflare Turnstile проверяет, что это человек, а не программа.</p>
+    </section>
+
+    <section id="account-signed-in" class="card" hidden>
+      <h2>Вы вошли</h2>
+      <dl class="account-info">
+        <dt>Номер</dt><dd id="account-id"></dd>
+        <dt>Создана</dt><dd id="account-created"></dd>
+        <dt>Passkey</dt><dd id="account-passkeys"></dd>
+        <dt>Код восстановления</dt><dd id="account-has-code"></dd>
+      </dl>
+      <p id="account-admin" hidden>Вы вошли как администратор. <a href="admin.html">Панель администратора</a></p>
+      <p id="account-admin-hint" class="note" hidden>Это учётная запись администратора. Чтобы открыть панель, выйдите и войдите снова по passkey с отпечатком, лицом или PIN-кодом.</p>
+      <div class="account-actions">
+        <button type="button" class="btn btn-primary" id="account-add-passkey">Добавить passkey</button>
+        <button type="button" class="btn btn-secondary" id="account-new-code">Новый код восстановления</button>
+        <button type="button" class="btn btn-secondary" id="account-logout">Выйти</button>
+      </div>
+    </section>
+  </main>
+
+  <footer>
+    <a href="./">Buddy</a>
+    <a href="declarations.html">Декларации Би</a>
+    <a href="journal.html">Журнал Би</a>
+    <a href="https://github.com/jfeldman777/buddy">Исходный код</a>
+    <span>Alpha 0.01 · версия <span data-version>005</span></span>
+    <button type="button" class="link-button" data-check-update>Проверить обновления</button>
+  </footer>
+</body>
+</html>

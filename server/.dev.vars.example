@@ -1,0 +1,6 @@
+# Copy to server/.dev.vars for `npm run api:dev`. server/.dev.vars is not committed.
+RP_ID="localhost"
+ALLOWED_ORIGINS="http://localhost:8080"
+RECOVERY_PEPPER="<любая длинная случайная строка для разработки>"
+# Cloudflare's public test secret: Turnstile always passes. Never use it in production.
+TURNSTILE_SECRET="<тестовый секрет Turnstile из документации Cloudflare>"
