@@ -71,9 +71,9 @@ test('api.js: понятные ошибки — сервер, сеть, серв
   await assert.rejects(none.health(), (error) => error.code === 'not_configured');
 });
 
-test('config.js: вне localhost сервер не подключён, пока его не развернули', () => {
-  assert.equal(API_BASE, '');
-  assert.equal(TURNSTILE_SITE_KEY, '');
+test('config.js: на сайте — развёрнутый сервер и публичный ключ Turnstile', () => {
+  assert.equal(API_BASE, 'https://buddy-api.jfeldman777.workers.dev');
+  assert.match(TURNSTILE_SITE_KEY, /^0x4[A-Za-z0-9_-]{15,40}$/);
 });
 
 test('webauthn.js: base64url и преобразование параметров passkey', () => {
