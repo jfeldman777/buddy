@@ -9,6 +9,13 @@ import { currentUser } from './account.js';
 import { fileToPhotoDataUrl } from './photo.js';
 
 const HISTORY_LIMIT = 20;
+const TRANSCRIPT_SEND_MAX = 60;
+
+function localDayStartIso() {
+  const d = new Date();
+  d.setHours(0, 0, 0, 0);
+  return d.toISOString();
+}
 
 export function initChat({ onProfileChange }) {
   const section = document.getElementById('chat');
@@ -157,6 +164,28 @@ export function initChat({ onProfileChange }) {
     await prepareAiGate();
   }
 
+  async function todaysTranscript({ excludeTrailingUserText = null } = {}) {
+    if (!storage?.messagesSince) return [];
+    const rows = await storage.messagesSince(localDayStartIso());
+    let list = rows.filter((m) => (m.role === 'user' || m.role === 'bi')
+      && m.text
+      && !String(m.text).startsWith('(Контекст с сервера)'));
+    if (excludeTrailingUserText != null
+      && list.length
+      && list[list.length - 1].role === 'user'
+      && list[list.length - 1].text === excludeTrailingUserText) {
+      list = list.slice(0, -1);
+    }
+    return list.slice(-TRANSCRIPT_SEND_MAX).map((m) => ({ role: m.role, text: String(m.text).slice(0, 2000) }));
+  }
+
+  function lastBiFromTranscript(transcript) {
+    for (let i = transcript.length - 1; i >= 0; i -= 1) {
+      if (transcript[i].role === 'bi') return transcript[i].text;
+    }
+    return '';
+  }
+
   async function beginAiTalk() {
     if (!auth || talking) return;
     talking = true;
@@ -167,9 +196,15 @@ export function initChat({ onProfileChange }) {
       if (ctx.context?.summary) {
         appendMessage('bi', `(Контекст с сервера) ${ctx.context.summary}`, { earlier: true });
       }
-      const data = await api.chatTurn(auth.token, { open: true, displayName: profile?.name || '' });
+      const transcript = await todaysTranscript();
+      const data = await api.chatTurn(auth.token, {
+        open: true,
+        displayName: profile?.name || '',
+        transcript,
+        lastBiReply: lastBiFromTranscript(transcript) || ctx.context?.lastUtterance || '',
+      });
       await biSay([data.reply]);
-      await record('chat_turn', {}, [{ type: 'data_sent', what: 'реплика и контекст Би', consent: true }], 'Ход Би получен.');
+      await record('chat_turn', {}, [{ type: 'data_sent', what: 'реплика, контекст и переписка за сегодня для Би', consent: true }], 'Ход Би получен.');
       budgetNote.textContent = `Бюджет общения с Би: осталось $${data.budget.remainingUsd.toFixed(4)} из $${data.budget.grantedUsd.toFixed(2)}.`;
       setTalkStatus('');
     } catch (error) {
@@ -191,17 +226,22 @@ export function initChat({ onProfileChange }) {
     talking = true;
     setTalkStatus('Би думает…');
     try {
-      if (text) await userSay(text);
-      else await userSay('(фото)');
+      const userLine = text || '(фото)';
+      await userSay(userLine);
       talkInput.value = '';
-      const body = { displayName: profile?.name || '' };
+      const transcript = await todaysTranscript({ excludeTrailingUserText: userLine });
+      const body = {
+        displayName: profile?.name || '',
+        transcript,
+        lastBiReply: lastBiFromTranscript(transcript),
+      };
       if (text) body.text = text;
       const hadPhoto = Boolean(pendingPhoto);
       if (pendingPhoto) body.photoData = pendingPhoto;
       const data = await api.chatTurn(auth.token, body);
       setPhotoPreview(null);
       await biSay([data.reply]);
-      await record('chat_turn', {}, [{ type: 'data_sent', what: hadPhoto ? 'текст и фото для Би' : 'реплика для Би', consent: true }], 'Ход Би получен.');
+      await record('chat_turn', {}, [{ type: 'data_sent', what: hadPhoto ? 'текст, фото и переписка за сегодня для Би' : 'реплика и переписка за сегодня для Би', consent: true }], 'Ход Би получен.');
       setTalkStatus('');
     } catch (error) {
       setTalkStatus(error.message || 'Ошибка.');

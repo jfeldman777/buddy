@@ -12,6 +12,23 @@ const PHOTO_DATA_MAX = 350_000;
 const PHOTO_RE = /^data:image\/(jpeg|png|webp);base64,[A-Za-z0-9+/=\s]+$/;
 const MAPS = new Set(['personality', 'worldview', 'communication']);
 const LAYERS = new Set(['fact', 'valuation', 'plan']);
+const TRANSCRIPT_MAX = 60;
+const TRANSCRIPT_LINE_MAX = 2_000;
+const ROLES = new Set(['user', 'bi']);
+
+function parseTranscript(raw) {
+  if (raw === undefined || raw === null) return [];
+  if (!Array.isArray(raw)) throw new HttpError(400, 'bad_transcript', 'Переписка должна быть списком реплик.');
+  const out = [];
+  for (const item of raw.slice(-TRANSCRIPT_MAX)) {
+    const role = item?.role === 'a' ? 'user' : item?.role;
+    if (!ROLES.has(role)) continue;
+    const text = typeof item?.text === 'string' ? item.text.trim().slice(0, TRANSCRIPT_LINE_MAX) : '';
+    if (!text || text.startsWith('(Контекст с сервера)')) continue;
+    out.push({ role, text });
+  }
+  return out;
+}
 
 const iso = (env) => new Date(now(env)).toISOString();
 
@@ -67,7 +84,9 @@ async function loadMemoryBundle(env, userId) {
     `SELECT id, title, body FROM bi_strategies WHERE status = 'approved' ORDER BY updated_at DESC LIMIT 20`,
   ).bind().all();
   const ctxRow = await env.DB.prepare(
-    'SELECT session_id AS sessionId, summary, open_threads_json AS openThreadsJson, active_teaching_id AS activeTeachingId, updated_at AS updatedAt FROM bi_conversation_context WHERE user_id = ?1',
+    `SELECT session_id AS sessionId, summary, open_threads_json AS openThreadsJson,
+            active_teaching_id AS activeTeachingId, last_utterance AS lastUtterance, updated_at AS updatedAt
+     FROM bi_conversation_context WHERE user_id = ?1`,
   ).bind(userId).first();
   let openThreads = [];
   try {
@@ -82,7 +101,14 @@ async function loadMemoryBundle(env, userId) {
     sharedKnowledge,
     strategies,
     context: ctxRow
-      ? { sessionId: ctxRow.sessionId, summary: ctxRow.summary, openThreads, activeTeachingId: ctxRow.activeTeachingId, updatedAt: ctxRow.updatedAt }
+      ? {
+        sessionId: ctxRow.sessionId,
+        summary: ctxRow.summary,
+        openThreads,
+        activeTeachingId: ctxRow.activeTeachingId,
+        lastUtterance: ctxRow.lastUtterance || '',
+        updatedAt: ctxRow.updatedAt,
+      }
       : null,
     knowledgeEpoch: await knowledgeEpoch(env),
   };
@@ -103,19 +129,22 @@ async function ensureOpenSession(env, userId) {
   return id;
 }
 
-async function saveContext(env, userId, sessionId, { summary, openThreads, activeTeachingId }) {
+async function saveContext(env, userId, sessionId, { summary, openThreads, activeTeachingId, lastUtterance }) {
   const at = iso(env);
   const threads = JSON.stringify(Array.isArray(openThreads) ? openThreads.slice(0, 20).map(String) : []);
+  const last = String(lastUtterance ?? '').slice(0, TEXT_MAX);
   await env.DB.prepare(
-    `INSERT INTO bi_conversation_context (user_id, session_id, summary, open_threads_json, active_teaching_id, updated_at)
-     VALUES (?1, ?2, ?3, ?4, ?5, ?6)
+    `INSERT INTO bi_conversation_context
+       (user_id, session_id, summary, open_threads_json, active_teaching_id, last_utterance, updated_at)
+     VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7)
      ON CONFLICT(user_id) DO UPDATE SET
        session_id = excluded.session_id,
        summary = excluded.summary,
        open_threads_json = excluded.open_threads_json,
        active_teaching_id = excluded.active_teaching_id,
+       last_utterance = excluded.last_utterance,
        updated_at = excluded.updated_at`,
-  ).bind(userId, sessionId, String(summary ?? '').slice(0, TEXT_MAX), threads, activeTeachingId ?? null, at).run();
+  ).bind(userId, sessionId, String(summary ?? '').slice(0, TEXT_MAX), threads, activeTeachingId ?? null, last, at).run();
 }
 
 async function saveMemoryCandidates(env, userId, candidates) {
@@ -210,11 +239,15 @@ async function chatTurn(request, env) {
   const photoData = parsePhotoData(body.photoData);
   const displayName = typeof body.displayName === 'string' ? body.displayName.trim().slice(0, 40) : '';
   const opening = body.open === true;
+  const transcript = parseTranscript(body.transcript);
   if (!text && !photoData && !opening) throw new HttpError(400, 'empty_turn', 'Нужен текст, фото или открытие разговора.');
   if (text.length > TEXT_MAX) throw new HttpError(400, 'too_long', 'Слишком длинное сообщение.');
 
   const chatSessionId = await ensureOpenSession(env, session.userId);
   const bundle = await loadMemoryBundle(env, session.userId);
+  const lastBiUtterance = typeof body.lastBiReply === 'string'
+    ? body.lastBiReply.trim().slice(0, TEXT_MAX)
+    : '';
   const prompt = buildABiPrompt({
     displayName,
     memoryEntries: bundle.entries,
@@ -222,6 +255,8 @@ async function chatTurn(request, env) {
     sharedKnowledge: bundle.sharedKnowledge,
     strategies: bundle.strategies,
     context: bundle.context,
+    transcript,
+    lastBiUtterance,
     hasPhoto: Boolean(photoData),
   });
   const userMessage = [
@@ -233,7 +268,7 @@ async function chatTurn(request, env) {
     sessionId: chatSessionId,
     speaker: 'bi',
     system: prompt.system,
-    user: `${prompt.user}\n\nСообщение А:\n${userMessage}`,
+    user: `${prompt.user}\n\nТекущая реплика А (ответ на вашу последнюю реплику выше, если она была):\n${userMessage}`,
     imageDataUrl: photoData,
   });
 
@@ -243,7 +278,7 @@ async function chatTurn(request, env) {
   }
   const summary = typeof reply.summary === 'string' ? reply.summary.trim().slice(0, TEXT_MAX) : (bundle.context?.summary ?? '');
   const openThreads = Array.isArray(reply.open_threads) ? reply.open_threads : (bundle.context?.openThreads ?? []);
-  await saveContext(env, session.userId, chatSessionId, { summary, openThreads });
+  await saveContext(env, session.userId, chatSessionId, { summary, openThreads, lastUtterance: utterance });
   const savedCandidates = await saveMemoryCandidates(env, session.userId, reply.memory_candidates);
 
   const budget = await chatBudgetView(env);
@@ -251,7 +286,7 @@ async function chatTurn(request, env) {
   return json({
     reply: utterance,
     sessionId: chatSessionId,
-    context: { summary, openThreads },
+    context: { summary, openThreads, lastUtterance: utterance },
     memoryCandidates: savedCandidates,
     usedKnowledgeIds: Array.isArray(reply.used_knowledge_ids) ? reply.used_knowledge_ids.map(String).slice(0, 20) : [],
     knowledgeEpoch: epoch,
@@ -275,4 +310,10 @@ export async function handleBi(request, env) {
   return json({ error: 'not_found', message: 'Нет такого адреса.' }, 404);
 }
 
-export const __test = { MEMORY_CONSENT_VERSION, MEMORY_CONSENT_TEXT, buildABiPrompt, ABI_STRATEGY_VERSION };
+export const __test = {
+  MEMORY_CONSENT_VERSION,
+  MEMORY_CONSENT_TEXT,
+  buildABiPrompt,
+  ABI_STRATEGY_VERSION,
+  parseTranscript,
+};

@@ -112,7 +112,8 @@ test('страница учётной записи: passkey, код восста
     assert.doesNotMatch(other, /account\.html\?create|Учётная запись</, `${page}: создание учётной записи — только через Би`);
   }
   assert.match(await read('web/index.html'), /<a href="account\.html" id="chat-login">Войти<\/a>/, 'в Настройках есть «Войти»');
-  assert.match(html, /Имя, разговоры с Би и журнал остаются на этом устройстве и на сервер не отправляются/);
+  assert.match(html, /переписка за сегодня для модели/);
+  assert.match(html, /журнал деклараций остаются на устройстве/);
   assert.match(html, /Код показывается один раз/);
   assert.match(html, /Cloudflare Turnstile/);
   const page = await read('web/account-page.js');

@@ -1,6 +1,16 @@
 // A–Bi prompts. Must never receive DCB secret_bio. Shared conceptual engine with DCB Bi.
 export const ABI_STRATEGY_VERSION = 'buddy-abi-v1';
 
+const ROLE_LABEL = { user: 'А', bi: 'Би' };
+
+export function formatTranscript(transcript = []) {
+  if (!Array.isArray(transcript) || !transcript.length) return '(пока нет реплик за сегодня на устройстве)';
+  return transcript.map((m) => {
+    const who = ROLE_LABEL[m.role] || m.role;
+    return `${who}: ${m.text}`;
+  }).join('\n');
+}
+
 export function buildABiPrompt({
   displayName = '',
   memoryEntries = [],
@@ -8,6 +18,8 @@ export function buildABiPrompt({
   sharedKnowledge = [],
   strategies = [],
   context = null,
+  transcript = [],
+  lastBiUtterance = '',
   hasPhoto = false,
 }) {
   const nameLine = displayName ? `К собеседнику можно обращаться: ${displayName} (если он так представился на устройстве).` : 'Имя на сервере не хранится — спросите, как обращаться, если ещё не ясно.';
@@ -29,6 +41,11 @@ export function buildABiPrompt({
     ? context.openThreads.map((t) => `- ${t}`).join('\n')
     : '(нет)';
   const summary = context?.summary || '(нет)';
+  const dialogue = formatTranscript(transcript);
+  const lastBi = lastBiUtterance
+    || [...transcript].reverse().find((m) => m.role === 'bi')?.text
+    || context?.lastUtterance
+    || '';
 
   const system = `Вы — Би, ИИ-помощник Buddy. Вы общаетесь с реальным человеком А на русском языке.
 Версия стратегии: ${ABI_STRATEGY_VERSION}.
@@ -37,6 +54,8 @@ export function buildABiPrompt({
 Знакомство (не анкета): возраст, пол по самоопределению, кем считает себя, что любит/не любит и почему, биография, окружение, желания и планы. Можно знакомиться прямо или попутно — по готовности А.
 
 Поведение: проявляйте инициативу, уточняйте, предлагайте совместную деятельность, при необходимости спорьте и исправляйте свои ошибки. Уважайте самостоятельность А: не навязывайте помощь и не лишайте удовольствия преодолевать трудности самому.
+
+У вас есть переписка за сегодня и ваша последняя реплика. Текущее сообщение А — ответ на вашу последнюю реплику (если она есть): разбирайте смысл именно в этой связке, не притворяйтесь, что не помните, о чём только что говорили.
 
 ${hasPhoto ? 'А приложил фото. Можно выдвинуть осторожное предположение, но ОБЯЗАТЕЛЬНО спросите подтверждение. Не утверждайте внешность как факт без ответа А.' : ''}
 
@@ -63,6 +82,12 @@ ${hasPhoto ? 'А приложил фото. Можно выдвинуть ост
     'Краткий контекст / незавершённые темы:',
     summary,
     threads,
+    '',
+    'Переписка за сегодня (с устройства А; не полный архив на сервере):',
+    dialogue,
+    '',
+    'Ваша последняя реплика Би (на неё отвечает А, если есть текущее сообщение):',
+    lastBi || '(ещё не было реплики Би в этом разговоре)',
     '',
     'Сделайте следующий ход Би.',
   ].join('\n');

@@ -117,14 +117,24 @@ test('промпт А–Би включает память и учение; бе
     teachings: [{ formulation: 'Правило: сначала спроси, потом советуй' }],
     sharedKnowledge: [{ version: 1, formulation: 'Общее: будь краток' }],
     strategies: [],
-    context: { summary: 'Говорили о работе', openThreads: ['план на выходные'] },
+    context: { summary: 'Говорили о работе', openThreads: ['план на выходные'], lastUtterance: 'Как прошёл день?' },
+    transcript: [
+      { role: 'bi', text: 'Как прошёл день?' },
+      { role: 'user', text: 'Нормально, устал' },
+    ],
+    lastBiUtterance: 'Как прошёл день?',
     hasPhoto: true,
   });
   assert.match(prompt.system, /подтверждение/i);
+  assert.match(prompt.system, /последняя реплика/);
   assert.match(prompt.user, /Любит шахматы/);
   assert.match(prompt.user, /сначала спроси/);
   assert.match(prompt.user, /Общее: будь краток/);
   assert.match(prompt.user, /план на выходные/);
+  assert.match(prompt.user, /Переписка за сегодня/);
+  assert.match(prompt.user, /Би: Как прошёл день\?/);
+  assert.match(prompt.user, /А: Нормально, устал/);
+  assert.match(prompt.user, /Ваша последняя реплика Би/);
   assert.doesNotMatch(`${prompt.system}\n${prompt.user}`, /secret_bio|hidden-bio-marker/);
 });
 
@@ -165,12 +175,26 @@ test('chat/turn: согласие, память в промпте, кошелё�
     return realFetch(url, init);
   };
 
-  const turn = await api.call('POST', '/chat/turn', { token, body: { open: true, displayName: 'Тест' } });
+  const turn = await api.call('POST', '/chat/turn', {
+    token,
+    body: {
+      open: true,
+      displayName: 'Тест',
+      transcript: [
+        { role: 'bi', text: 'Привет, как дела?' },
+        { role: 'user', text: 'Хорошо' },
+      ],
+      lastBiReply: 'Привет, как дела?',
+    },
+  });
   assert.equal(turn.status, 200);
   assert.match(turn.data.reply, /Помню/);
   assert.equal(turn.data.budget.purse, 'buddy_chat');
   assert.ok(turn.data.budget.spentMicros > 0);
   assert.ok(calls.length >= 1);
+  const sent = JSON.stringify(calls[0].messages);
+  assert.match(sent, /Привет, как дела/);
+  assert.match(sent, /Переписка за сегодня/);
 
   const dcb = await budgetView(api.env);
   assert.equal(dcb.spentMicros, 0, 'DCB кошелёк не тронут');
@@ -178,6 +202,7 @@ test('chat/turn: согласие, память в промпте, кошелё�
   const ctx = await api.call('GET', '/chat/context', { token });
   assert.equal(ctx.status, 200);
   assert.match(ctx.data.context.summary, /Обсудили факт/);
+  assert.match(ctx.data.context.lastUtterance, /Помню/);
 });
 
 test('изоляция: таблицы памяти А и DCB сосуществуют после миграций', async () => {

@@ -115,6 +115,31 @@ function idbStorage(db) {
       });
     },
 
+    // Messages from `sinceIso` (inclusive), oldest first. Caps scan to avoid huge walks.
+    messagesSince(sinceIso, { maxScan = 500 } = {}) {
+      return new Promise((resolve, reject) => {
+        const result = [];
+        const cursorRequest = store('messages').openCursor(null, 'prev');
+        let scanned = 0;
+        cursorRequest.onsuccess = () => {
+          const cursor = cursorRequest.result;
+          if (!cursor || scanned >= maxScan) {
+            resolve(result.reverse());
+            return;
+          }
+          scanned += 1;
+          const row = cursor.value;
+          if (row.at >= sinceIso) {
+            result.push(row);
+            cursor.continue();
+            return;
+          }
+          resolve(result.reverse());
+        };
+        cursorRequest.onerror = () => reject(cursorRequest.error);
+      });
+    },
+
     addJournalEntry({ event, explanation, actions, compliance }) {
       return new Promise((resolve, reject) => {
         const tx = db.transaction(['events', 'explanations', 'actions', 'compliance'], 'readwrite');
@@ -194,6 +219,9 @@ function memoryStorage() {
     },
     async recentMessages(limit) {
       return messages.slice(-limit);
+    },
+    async messagesSince(sinceIso) {
+      return messages.filter((m) => m.at >= sinceIso);
     },
     async addJournalEntry({ event, explanation, actions, compliance }) {
       journal.events.set(event.eventId, event);
