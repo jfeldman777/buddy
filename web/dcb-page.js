@@ -12,7 +12,11 @@ const storage = await openStorage();
 let auth = null;
 let personas = [];
 let current = null;
+/** @type {string|null|undefined} undefined = leave unchanged on patch; null = clear; string = data URL */
+let pendingPhoto = undefined;
 const SEGMENT_PAIRS = 15;
+const PHOTO_MAX_EDGE = 512;
+const PHOTO_JPEG_QUALITY = 0.72;
 
 function showStatus(text) {
   status.textContent = text;
@@ -39,6 +43,46 @@ function renderBudget(budget) {
   $('dcb-budget').textContent = `Бюджет DCB: осталось $${dollars(budget.remainingMicros)} из $${dollars(budget.grantedMicros)} (потрачено $${dollars(budget.spentMicros)})${model}.`;
 }
 
+function setPhotoPreview(dataUrl) {
+  const wrap = $('dcb-persona-photo-preview-wrap');
+  const img = $('dcb-persona-photo-preview');
+  if (dataUrl) {
+    img.src = dataUrl;
+    wrap.hidden = false;
+  } else {
+    img.removeAttribute('src');
+    wrap.hidden = true;
+  }
+}
+
+function resetPhotoForm() {
+  pendingPhoto = undefined;
+  $('dcb-persona-photo').value = '';
+  setPhotoPreview(null);
+}
+
+async function fileToPhotoDataUrl(file) {
+  if (!file || !/^image\/(jpeg|png|webp)$/i.test(file.type)) {
+    throw new Error('Нужно фото JPEG, PNG или WebP.');
+  }
+  const bitmap = await createImageBitmap(file);
+  try {
+    const scale = Math.min(1, PHOTO_MAX_EDGE / Math.max(bitmap.width, bitmap.height));
+    const w = Math.max(1, Math.round(bitmap.width * scale));
+    const h = Math.max(1, Math.round(bitmap.height * scale));
+    const canvas = document.createElement('canvas');
+    canvas.width = w;
+    canvas.height = h;
+    const ctx = canvas.getContext('2d');
+    ctx.drawImage(bitmap, 0, 0, w, h);
+    const dataUrl = canvas.toDataURL('image/jpeg', PHOTO_JPEG_QUALITY);
+    if (dataUrl.length > 340_000) throw new Error('Фото слишком большое даже после сжатия. Выберите другое.');
+    return dataUrl;
+  } finally {
+    bitmap.close?.();
+  }
+}
+
 function renderPersonas() {
   const list = $('dcb-persona-list');
   list.replaceChildren(...personas.map((p) => {
@@ -46,12 +90,15 @@ function renderPersonas() {
     const open = document.createElement('button');
     open.type = 'button';
     open.className = 'link-button';
-    open.textContent = p.title;
+    open.textContent = p.hasPhoto ? `${p.title} · фото` : p.title;
     open.addEventListener('click', () => act(async () => {
       const { persona } = await api.dcbGetPersona(auth.token, p.id);
       $('dcb-persona-id').value = persona.id;
       $('dcb-persona-title').value = persona.title;
       $('dcb-persona-bio').value = persona.secretBio;
+      pendingPhoto = undefined;
+      $('dcb-persona-photo').value = '';
+      setPhotoPreview(persona.photoData || null);
       $('dcb-persona-reset').hidden = false;
       $('dcb-start-persona').value = persona.id;
     }));
@@ -108,7 +155,8 @@ function showSession(session) {
   $('dcb-session').hidden = false;
   const mode = session.mode === 'large' ? 'большой' : 'малый';
   const statusLabel = { running: 'идёт', paused: 'пауза', finished: 'завершён' }[session.status] ?? session.status;
-  $('dcb-session-meta').textContent = `${session.personaTitle} · режим ${mode} · ${statusLabel} · вопросов Би: ${session.questionCount} · стратегия ${session.biStrategyVersion}`;
+  const photoNote = session.hasPhoto ? ' · фото для Би' : '';
+  $('dcb-session-meta').textContent = `${session.personaTitle} · режим ${mode} · ${statusLabel} · вопросов Би: ${session.questionCount} · стратегия ${session.biStrategyVersion}${photoNote}`;
   const active = session.status === 'running' || session.status === 'paused';
   $('dcb-pause').hidden = session.status !== 'running';
   $('dcb-resume').hidden = session.status !== 'paused';
@@ -198,16 +246,32 @@ function duration(start, end) {
   return `${min} мин ${sec} с`;
 }
 
+$('dcb-persona-photo').addEventListener('change', () => act(async () => {
+  const file = $('dcb-persona-photo').files?.[0];
+  if (!file) return;
+  pendingPhoto = await fileToPhotoDataUrl(file);
+  setPhotoPreview(pendingPhoto);
+  showStatus('Фото сжато и готово к сохранению вместе с Си.');
+}));
+
+$('dcb-persona-photo-clear').addEventListener('click', () => {
+  pendingPhoto = null;
+  $('dcb-persona-photo').value = '';
+  setPhotoPreview(null);
+});
+
 $('dcb-persona-form').addEventListener('submit', (event) => {
   event.preventDefault();
   act(async () => {
     const id = $('dcb-persona-id').value;
     const body = { title: $('dcb-persona-title').value, secretBio: $('dcb-persona-bio').value };
+    if (pendingPhoto !== undefined) body.photoData = pendingPhoto;
     if (id) await api.dcbPatchPersona(auth.token, id, body);
     else await api.dcbCreatePersona(auth.token, body);
     $('dcb-persona-form').reset();
     $('dcb-persona-id').value = '';
     $('dcb-persona-reset').hidden = true;
+    resetPhotoForm();
     await refreshPersonas();
     showStatus('Си сохранён.');
   });
@@ -217,6 +281,7 @@ $('dcb-persona-reset').addEventListener('click', () => {
   $('dcb-persona-form').reset();
   $('dcb-persona-id').value = '';
   $('dcb-persona-reset').hidden = true;
+  resetPhotoForm();
 });
 
 async function onePair() {
@@ -230,15 +295,37 @@ async function onePair() {
 }
 
 // Runs SEGMENT_PAIRS exchanges, then pauses so Di can read the dialogue.
+// On mid-segment failure: pause and report how many pairs completed (do not silently stop at 1).
 async function runSegment({ resumeIfPaused = true } = {}) {
   if (!current) return;
   if (current.status === 'paused' && resumeIfPaused) {
     showSession((await api.dcbResume(auth.token, current.id)).session);
   }
   if (current.status !== 'running') throw new Error('Сеанс не идёт. Продолжите или начните новый.');
-  for (let i = 1; i <= SEGMENT_PAIRS; i++) {
-    showStatus(`Отрезок: пара ${i} из ${SEGMENT_PAIRS}…`);
-    await onePair();
+  let completed = 0;
+  try {
+    for (let i = 1; i <= SEGMENT_PAIRS; i++) {
+      showStatus(`Отрезок: пара ${i} из ${SEGMENT_PAIRS}…`);
+      await onePair();
+      completed = i;
+    }
+  } catch (error) {
+    try {
+      if (current?.id && current.status === 'running') {
+        showSession((await api.dcbPause(auth.token, current.id)).session);
+      } else if (current?.id) {
+        showSession((await api.dcbGetSession(auth.token, current.id)).session);
+      }
+    } catch {
+      /* keep last shown session */
+    }
+    $('dcb-log').scrollIntoView({ block: 'start', behavior: 'smooth' });
+    const detail = error?.message || 'Ошибка.';
+    throw new Error(
+      completed
+        ? `Остановились после ${completed} пар из ${SEGMENT_PAIRS}: ${detail}`
+        : `Не удалось сделать первую пару: ${detail}`,
+    );
   }
   showSession((await api.dcbPause(auth.token, current.id)).session);
   $('dcb-log').scrollIntoView({ block: 'start', behavior: 'smooth' });

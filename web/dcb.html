@@ -1,4 +1,4 @@
-<!doctype html>
+﻿<!doctype html>
 <html lang="ru">
 <head>
   <meta charset="utf-8">
@@ -37,7 +37,14 @@
           <label for="dcb-persona-title">Название</label>
           <input id="dcb-persona-title" maxlength="120" required placeholder="Например: Анна, 34 года">
           <label for="dcb-persona-bio">Биография, люди, связи, особенности общения</label>
-          <textarea id="dcb-persona-bio" rows="8" maxlength="20000" required placeholder="Свободный текст. Раскрывайте факты так, как Си мог бы говорить о себе постепенно."></textarea>
+          <textarea id="dcb-persona-bio" rows="8" maxlength="20000" required placeholder="Свободный текст. Раскрывайте факты так, как Си мог бы говорить о себе постепенно. Укажите пол, возраст и как обращаться, если хотите, чтобы Си отвечал сразу."></textarea>
+          <label for="dcb-persona-photo">Фото Си (необязательно, до диалога)</label>
+          <input type="file" id="dcb-persona-photo" accept="image/jpeg,image/png,image/webp">
+          <p class="note">Би увидит фото и может угадать пол/возраст, но попросит подтверждение. Скрытую биографию по фото не читает.</p>
+          <div id="dcb-persona-photo-preview-wrap" class="dcb-photo-wrap" hidden>
+            <img id="dcb-persona-photo-preview" class="dcb-photo-preview" alt="Превью фото Си">
+            <button type="button" class="btn btn-secondary btn-small" id="dcb-persona-photo-clear">Убрать фото</button>
+          </div>
           <input type="hidden" id="dcb-persona-id">
           <div class="account-actions">
             <button type="submit" class="btn btn-primary" id="dcb-persona-save">Сохранить Си</button>
@@ -141,7 +148,7 @@
     <a href="./">Buddy</a>
     <a href="admin.html">Администратор</a>
     <a href="https://github.com/jfeldman777/buddy">Исходный код</a>
-    <span>Alpha 0.01 · версия <span data-version>010</span></span>
+    <span>Alpha 0.01 · версия <span data-version>011</span></span>
     <button type="button" class="link-button" data-check-update>Проверить обновления</button>
   </footer>
 </body>

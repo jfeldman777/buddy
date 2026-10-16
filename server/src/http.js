@@ -39,15 +39,16 @@ export function corsHeaders(request, env) {
 }
 
 // Requiring application/json also forces a CORS preflight for browser requests from other sites.
-export async function readJson(request) {
+// maxBytes: DCB persona photo upload needs more than the default 32 KB.
+export async function readJson(request, { maxBytes = MAX_BODY_BYTES } = {}) {
   if (!/^application\/json\b/i.test(request.headers.get('content-type') ?? '')) {
     throw new HttpError(415, 'json_required', 'Нужен запрос в формате JSON.');
   }
-  if (Number(request.headers.get('content-length') ?? 0) > MAX_BODY_BYTES) {
+  if (Number(request.headers.get('content-length') ?? 0) > maxBytes) {
     throw new HttpError(413, 'too_large', 'Слишком большой запрос.');
   }
   const text = await request.text();
-  if (new TextEncoder().encode(text).length > MAX_BODY_BYTES) throw new HttpError(413, 'too_large', 'Слишком большой запрос.');
+  if (new TextEncoder().encode(text).length > maxBytes) throw new HttpError(413, 'too_large', 'Слишком большой запрос.');
   if (!text) return {};
   let value;
   try {

@@ -54,6 +54,24 @@ test('промпт Би не содержит secret_bio; промпт Си со
   assert.doesNotMatch(`${bi.system}\n${bi.user}`, new RegExp(SECRET_MARKER));
   assert.doesNotMatch(`${bi.system}\n${bi.user}`, /secret/i);
   assert.match(`${si.system}\n${si.user}`, new RegExp(SECRET_MARKER));
+  assert.match(bi.system, /пол/);
+  assert.match(bi.system, /возраст/);
+  assert.match(bi.system, /обращ/);
+  assert.match(bi.user, /пол/);
+});
+
+test('промпт Би с фото: угадать можно, но нужно подтверждение; секрет не утекает', () => {
+  const secret = `Биография с маркером ${SECRET_MARKER}`;
+  const bi = buildBiPrompt({
+    mode: 'small',
+    messages: [],
+    model: { biography: '', facts: [], hypotheses: [], unknowns: [] },
+    hasPhoto: true,
+  });
+  assert.match(bi.system, /фото/i);
+  assert.match(bi.system, /подтвержд/i);
+  assert.doesNotMatch(`${bi.system}\n${bi.user}`, new RegExp(SECRET_MARKER));
+  assert.doesNotMatch(`${bi.system}\n${bi.user}`, new RegExp(secret));
 });
 
 test('бюджет: оценка стоимости и жёсткий потолок $10', () => {
@@ -102,6 +120,8 @@ test('схема DCB отделена от личных диалогов Buddy; 
   assert.match(schema, /granted_micros INTEGER NOT NULL/);
   assert.match(schema, /10000000/);
   assert.match(schema, /personal chats and journal stay on the device/i);
+  const photo = await readFile(new URL('../migrations/0003_dcb_photo.sql', import.meta.url), 'utf8');
+  assert.match(photo, /photo_data/);
 });
 
 test('DCB: только elevated admin; CRUD Си; изоляция маркера в вызовах OpenAI', async () => {
@@ -124,16 +144,29 @@ test('DCB: только elevated admin; CRUD Си; изоляция маркер
   assert.equal(list.data.personas.length, 1);
   assert.equal(list.data.personas[0].secretBio, undefined, 'в списке нет скрытого описания');
 
+  const tinyPhoto = 'data:image/jpeg;base64,/9j/4AAQSkZJRgABAQAAAQABAAD/2wBDAAgGBgcGBQgHBwcJCQgKDBQNDAsLDBkSEw8UHRofHh0aHBwgJC4nICIsIxwcKDcpLDAxNDQ0Hyc5PTgyPC4zNDL/2wBDAQkJCQwLDBgNDRgyIRwhMjIyMjIyMjIyMjIyMjIyMjIyMjIyMjIyMjIyMjIyMjIyMjIyMjIyMjIyMjIyMjIyMjL/wAARCAABAAEDASIAAhEBAxEB/8QAFQABAQAAAAAAAAAAAAAAAAAAAAX/xAAUEAEAAAAAAAAAAAAAAAAAAAAA/8QAFQEBAQAAAAAAAAAAAAAAAAAAAAX/xAAUEQEAAAAAAAAAAAAAAAAAAAAA/9oADAMBEQCEAwEPwAB/9k=';
+  const withPhoto = await api.call('PATCH', `/dcb/personas/${created.data.persona.id}`, {
+    token,
+    body: { photoData: tinyPhoto },
+  });
+  assert.equal(withPhoto.status, 200);
+  assert.equal(withPhoto.data.persona.hasPhoto, true);
+  assert.equal(withPhoto.data.persona.photoData, tinyPhoto);
+
   const calls = mockOpenAi(api, (body) => {
     const blob = JSON.stringify(body.messages);
     const isBi = /Вы — Би/.test(blob);
     const isSi = /Вы — Си/.test(blob);
     if (isBi) {
       assert.doesNotMatch(blob, new RegExp(SECRET_MARKER), 'утечка секрета в ход Би');
-      return { json: { utterance: 'Как вас зовут?', facts: [], hypotheses: ['Короткое имя'], unknowns: ['возраст'], biography: '' } };
+      const user = body.messages.find((m) => m.role === 'user');
+      assert.ok(Array.isArray(user.content), 'Би получает multimodal с фото');
+      assert.ok(user.content.some((p) => p.type === 'image_url' && p.image_url?.url === tinyPhoto));
+      return { json: { utterance: 'По фото похоже, вы женщина — так?', facts: [], hypotheses: ['женщина'], unknowns: ['возраст', 'обращение'], biography: '' } };
     }
     if (isSi) {
       assert.match(blob, new RegExp(SECRET_MARKER), 'Си должен видеть секрет');
+      assert.equal(typeof body.messages.find((m) => m.role === 'user').content, 'string', 'Си не получает фото');
       return { json: { utterance: 'Меня зовут Анна.', new_facts: [] } };
     }
     return { json: { ok: true } };
@@ -145,6 +178,8 @@ test('DCB: только elevated admin; CRUD Си; изоляция маркер
   });
   assert.equal(session.status, 201);
   assert.equal(session.data.session.mode, 'small');
+  assert.equal(session.data.session.hasPhoto, true);
+  assert.match(session.data.session.biStrategyVersion, /dcb-bi-facts-v2/);
 
   const bi = await api.call('POST', `/dcb/sessions/${session.data.session.id}/bi`, { token, body: {} });
   assert.equal(bi.status, 200);

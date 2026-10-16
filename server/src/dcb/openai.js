@@ -6,21 +6,30 @@ import {
 const OPENAI_URL = 'https://api.openai.com/v1/chat/completions';
 export const MAX_OUTPUT_TOKENS = 500;
 
-function estimateInputTokens(system, user) {
-  return Math.ceil((system.length + user.length) / 3) + 40;
+function estimateInputTokens(system, user, imageDataUrl) {
+  const imageTokens = imageDataUrl ? 800 : 0;
+  const text = typeof user === 'string' ? user : JSON.stringify(user);
+  return Math.ceil((system.length + text.length) / 3) + 40 + imageTokens;
 }
 
-function buildChatBody(model, system, user) {
+function userContent(user, imageDataUrl) {
+  if (!imageDataUrl) return user;
+  return [
+    { type: 'text', text: user },
+    { type: 'image_url', image_url: { url: imageDataUrl } },
+  ];
+}
+
+function buildChatBody(model, system, user, imageDataUrl) {
   const body = {
     model,
     temperature: 0.7,
     response_format: { type: 'json_object' },
     messages: [
       { role: 'system', content: system },
-      { role: 'user', content: user },
+      { role: 'user', content: userContent(user, imageDataUrl) },
     ],
   };
-  // GPT-6 family: completion budget + no reasoning tokens for structured JSON replies.
   if (/^gpt-6/i.test(model)) {
     body.max_completion_tokens = MAX_OUTPUT_TOKENS;
     body.reasoning_effort = 'none';
@@ -28,6 +37,16 @@ function buildChatBody(model, system, user) {
     body.max_tokens = MAX_OUTPUT_TOKENS;
   }
   return body;
+}
+
+function extractMessageText(data) {
+  const message = data.choices?.[0]?.message;
+  if (!message) return '';
+  if (typeof message.content === 'string') return message.content;
+  if (Array.isArray(message.content)) {
+    return message.content.map((part) => (typeof part === 'string' ? part : part?.text ?? '')).join('');
+  }
+  return '';
 }
 
 function parseJsonContent(text) {
@@ -64,7 +83,7 @@ function openaiErrorMessage(status, errText, model) {
   ) {
     return {
       code: 'openai_forbidden',
-      message: `У этого ключа нет доступа к модели «${model}». В кабинете OpenAI (Project → Limits / Model access) включите её или задайте другую модель в переменной Worker OPENAI_MODEL (например gpt-4.1-mini или gpt-4o).`,
+      message: `У этого ключа нет доступа к модели «${model}». В кабинете OpenAI включите её или задайте OPENAI_MODEL (например gpt-6-luna или gpt-6.1-sol).`,
     };
   }
   if (status === 429) {
@@ -82,23 +101,28 @@ function openaiErrorMessage(status, errText, model) {
   return { code: 'openai_error', message: 'Ошибка вызова OpenAI.' };
 }
 
-export async function chatJson(env, { sessionId, speaker, system, user }) {
+async function callOnce(env, { prices, system, user, imageDataUrl }) {
+  const fetchImpl = env.FETCH ?? fetch;
+  const response = await fetchImpl(OPENAI_URL, {
+    method: 'POST',
+    headers: {
+      Authorization: `Bearer ${env.OPENAI_API_KEY}`,
+      'Content-Type': 'application/json',
+    },
+    body: JSON.stringify(buildChatBody(prices.model, system, user, imageDataUrl)),
+  });
+  return response;
+}
+
+export async function chatJson(env, { sessionId, speaker, system, user, imageDataUrl = null }) {
   if (!env.OPENAI_API_KEY) throw new HttpError(503, 'unconfigured', 'Сервер не настроен: нет ключа OpenAI.');
   const prices = resolvePriceTable(env);
-  const inputTokens = estimateInputTokens(system, user);
+  const inputTokens = estimateInputTokens(system, user, imageDataUrl);
   const reserveAmount = estimateCostMicros({ inputTokens, maxOutputTokens: MAX_OUTPUT_TOKENS }, prices);
   const reservation = await reserveStrict(env, sessionId, Math.max(reserveAmount, 1));
-  const fetchImpl = env.FETCH ?? fetch;
   let response;
   try {
-    response = await fetchImpl(OPENAI_URL, {
-      method: 'POST',
-      headers: {
-        Authorization: `Bearer ${env.OPENAI_API_KEY}`,
-        'Content-Type': 'application/json',
-      },
-      body: JSON.stringify(buildChatBody(prices.model, system, user)),
-    });
+    response = await callOnce(env, { prices, system, user, imageDataUrl });
   } catch {
     await release(env, reservation.id);
     throw new HttpError(503, 'openai_unavailable', 'OpenAI сейчас недоступен. Попробуйте позже.');
@@ -111,7 +135,20 @@ export async function chatJson(env, { sessionId, speaker, system, user }) {
     throw new HttpError(502, code, message);
   }
   const data = await response.json();
-  const content = data.choices?.[0]?.message?.content;
+  let content = extractMessageText(data);
+  if (!content.trim()) {
+    // One retry: empty content sometimes happens with reasoning models.
+    try {
+      const retry = await callOnce(env, { prices, system, user, imageDataUrl });
+      if (retry.ok) {
+        const retryData = await retry.json();
+        content = extractMessageText(retryData);
+        data.usage = retryData.usage ?? data.usage;
+      }
+    } catch {
+      /* keep empty */
+    }
+  }
   const usage = data.usage ?? {};
   const inTok = Number(usage.prompt_tokens ?? inputTokens);
   const outTok = Number(usage.completion_tokens ?? 0);

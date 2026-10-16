@@ -8,8 +8,24 @@ import { chatJson } from './openai.js';
 const TITLE_MAX = 120;
 const BIO_MAX = 20_000;
 const TEXT_MAX = 4_000;
+// Persona create/patch may include a resized portrait data URL.
+const PERSONA_BODY_MAX = 400 * 1024;
+const PHOTO_DATA_MAX = 350_000;
+const PHOTO_RE = /^data:image\/(jpeg|png|webp);base64,[A-Za-z0-9+/=\s]+$/;
 
 const iso = (env) => new Date(now(env)).toISOString();
+
+function parsePhotoData(value, { allowNull = false } = {}) {
+  if (value === null || value === '') {
+    if (!allowNull) throw new HttpError(400, 'bad_photo', 'Некорректное фото.');
+    return null;
+  }
+  if (typeof value !== 'string') throw new HttpError(400, 'bad_photo', 'Фото должно быть строкой data URL.');
+  const photo = value.replace(/\s+/g, '');
+  if (photo.length > PHOTO_DATA_MAX) throw new HttpError(413, 'photo_too_large', 'Фото слишком большое. Сожмите изображение и попробуйте снова.');
+  if (!PHOTO_RE.test(photo)) throw new HttpError(400, 'bad_photo', 'Нужно фото JPEG, PNG или WebP (data URL).');
+  return photo;
+}
 
 async function requireDi(request, env) {
   // First Di is the administrator with an elevated passkey session.
@@ -34,7 +50,7 @@ function parseModel(row) {
 
 async function loadSession(env, sessionId, diUserId) {
   const session = await env.DB.prepare(
-    `SELECT s.*, p.title AS persona_title, p.secret_bio, p.di_user_id AS persona_di
+    `SELECT s.*, p.title AS persona_title, p.secret_bio, p.photo_data, p.di_user_id AS persona_di
      FROM dcb_sessions s JOIN dcb_personas p ON p.id = s.persona_id WHERE s.id = ?1`,
   ).bind(sessionId).first();
   if (!session || session.di_user_id !== diUserId) throw new HttpError(404, 'not_found', 'Сеанс не найден.');
@@ -74,6 +90,7 @@ async function sessionView(env, session, { includeSecret = false } = {}) {
     mode: session.mode,
     status: session.status,
     biStrategyVersion: session.bi_strategy_version,
+    hasPhoto: Boolean(session.photo_data),
     startedAt: session.started_at,
     finishedAt: session.finished_at,
     questionCount: session.question_count,
@@ -94,8 +111,12 @@ function personaView(row, { includeSecret = false } = {}) {
     title: row.title,
     createdAt: row.created_at,
     updatedAt: row.updated_at,
+    hasPhoto: Boolean(row.photo_data),
   };
-  if (includeSecret) view.secretBio = row.secret_bio;
+  if (includeSecret) {
+    view.secretBio = row.secret_bio;
+    if (row.photo_data) view.photoData = row.photo_data;
+  }
   return view;
 }
 
@@ -108,24 +129,30 @@ const handlers = {
   'GET /dcb/personas': async (request, env) => {
     const session = await requireDi(request, env);
     const { results } = await env.DB.prepare(
-      'SELECT id, title, created_at, updated_at FROM dcb_personas WHERE di_user_id = ?1 ORDER BY updated_at DESC',
+      'SELECT id, title, photo_data, created_at, updated_at FROM dcb_personas WHERE di_user_id = ?1 ORDER BY updated_at DESC',
     ).bind(session.userId).all();
     return json({ personas: results.map((row) => personaView(row)) });
   },
 
   'POST /dcb/personas': async (request, env) => {
     const session = await requireDi(request, env);
-    const body = await readJson(request);
+    const body = await readJson(request, { maxBytes: PERSONA_BODY_MAX });
     const title = typeof body.title === 'string' ? body.title.trim() : '';
     const secretBio = typeof body.secretBio === 'string' ? body.secretBio.trim() : '';
     if (!title || title.length > TITLE_MAX) throw new HttpError(400, 'bad_title', 'Нужно короткое название Си.');
     if (!secretBio || secretBio.length > BIO_MAX) throw new HttpError(400, 'bad_bio', 'Нужно описание биографии Си.');
+    const photoData = body.photoData !== undefined ? parsePhotoData(body.photoData, { allowNull: true }) : null;
     const id = crypto.randomUUID();
     const at = iso(env);
     await env.DB.prepare(
-      'INSERT INTO dcb_personas (id, di_user_id, title, secret_bio, created_at, updated_at) VALUES (?1, ?2, ?3, ?4, ?5, ?6)',
-    ).bind(id, session.userId, title, secretBio, at, at).run();
-    return json({ persona: personaView({ id, title, secret_bio: secretBio, created_at: at, updated_at: at }, { includeSecret: true }) }, 201);
+      'INSERT INTO dcb_personas (id, di_user_id, title, secret_bio, photo_data, created_at, updated_at) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7)',
+    ).bind(id, session.userId, title, secretBio, photoData, at, at).run();
+    return json({
+      persona: personaView(
+        { id, title, secret_bio: secretBio, photo_data: photoData, created_at: at, updated_at: at },
+        { includeSecret: true },
+      ),
+    }, 201);
   },
 };
 
@@ -144,15 +171,23 @@ async function patchPersona(request, env, id) {
     `SELECT id FROM dcb_sessions WHERE persona_id = ?1 AND status IN ('running', 'paused') LIMIT 1`,
   ).bind(id).first();
   if (active) throw new HttpError(409, 'in_session', 'Нельзя менять описание Си во время незавершённого сеанса.');
-  const body = await readJson(request);
+  const body = await readJson(request, { maxBytes: PERSONA_BODY_MAX });
   const title = body.title !== undefined ? String(body.title).trim() : row.title;
   const secretBio = body.secretBio !== undefined ? String(body.secretBio).trim() : row.secret_bio;
   if (!title || title.length > TITLE_MAX) throw new HttpError(400, 'bad_title', 'Нужно короткое название Си.');
   if (!secretBio || secretBio.length > BIO_MAX) throw new HttpError(400, 'bad_bio', 'Нужно описание биографии Си.');
+  const photoData = body.photoData !== undefined
+    ? parsePhotoData(body.photoData, { allowNull: true })
+    : row.photo_data;
   const at = iso(env);
-  await env.DB.prepare('UPDATE dcb_personas SET title = ?1, secret_bio = ?2, updated_at = ?3 WHERE id = ?4')
-    .bind(title, secretBio, at, id).run();
-  return json({ persona: personaView({ ...row, title, secret_bio: secretBio, updated_at: at }, { includeSecret: true }) });
+  await env.DB.prepare('UPDATE dcb_personas SET title = ?1, secret_bio = ?2, photo_data = ?3, updated_at = ?4 WHERE id = ?5')
+    .bind(title, secretBio, photoData, at, id).run();
+  return json({
+    persona: personaView(
+      { ...row, title, secret_bio: secretBio, photo_data: photoData, updated_at: at },
+      { includeSecret: true },
+    ),
+  });
 }
 
 async function deletePersona(request, env, id) {
@@ -236,9 +271,16 @@ async function biTurn(request, env, id) {
   const messages = await loadMessages(env, id);
   const modelRow = await env.DB.prepare('SELECT * FROM dcb_bi_model WHERE session_id = ?1').bind(id).first();
   const model = parseModel(modelRow);
-  // Isolation: only mode, messages, model — never secret_bio.
-  const prompt = buildBiPrompt({ mode: loaded.mode, messages, model });
-  const { json: reply } = await chatJson(env, { sessionId: id, speaker: 'bi', system: prompt.system, user: prompt.user });
+  const photoData = typeof loaded.photo_data === 'string' && loaded.photo_data ? loaded.photo_data : null;
+  // Isolation: mode, messages, model, optional photo — never secret_bio.
+  const prompt = buildBiPrompt({ mode: loaded.mode, messages, model, hasPhoto: Boolean(photoData) });
+  const { json: reply } = await chatJson(env, {
+    sessionId: id,
+    speaker: 'bi',
+    system: prompt.system,
+    user: prompt.user,
+    imageDataUrl: photoData,
+  });
   const utterance = typeof reply.utterance === 'string' ? reply.utterance.trim() : '';
   if (!utterance || utterance.length > TEXT_MAX) throw new HttpError(502, 'model_bad_json', 'Би не дал понятной реплики.');
   const facts = asStringArray(reply.facts);
