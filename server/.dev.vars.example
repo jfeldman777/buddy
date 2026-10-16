@@ -7,5 +7,5 @@ TURNSTILE_SECRET="<тестовый секрет Turnstile из документ
 # OpenAI — только для DCB и будущего Buddy. Никогда не коммитить настоящее значение.
 # Подставьте ключ локально в server/.dev.vars (этот файл-пример ключ не содержит).
 # OPENAI_API_KEY=
-# Необязательно: модель, если у ключа нет gpt-4o-mini (например gpt-4.1-mini или gpt-4o).
-# OPENAI_MODEL=gpt-4.1-mini
+# Необязательно: модель (по умолчанию на сервере gpt-6-luna).
+# OPENAI_MODEL=gpt-6-luna

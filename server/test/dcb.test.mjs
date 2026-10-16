@@ -62,8 +62,8 @@ test('бюджет: оценка стоимости и жёсткий потол
   assert.ok(est > 0);
   const act = actualCostMicros({ inputTokens: 1000, outputTokens: 100 });
   assert.ok(act > 0 && act <= est);
-  assert.equal(resolvePriceTable({}).model, 'gpt-4o-mini');
-  assert.equal(resolvePriceTable({ OPENAI_MODEL: 'gpt-4.1-mini' }).model, 'gpt-4.1-mini');
+  assert.equal(resolvePriceTable({}).model, 'gpt-6-luna');
+  assert.equal(resolvePriceTable({ OPENAI_MODEL: 'gpt-6.1-sol' }).model, 'gpt-6.1-sol');
 });
 
 test('OpenAI: нет доступа к модели — понятное сообщение с именем модели', async () => {
@@ -78,12 +78,12 @@ test('OpenAI: нет доступа к модели — понятное соо�
     body: { personaId: persona.data.persona.id, mode: 'small' },
   });
   api.env.OPENAI_API_KEY = 'test-openai-placeholder';
-  api.env.OPENAI_MODEL = 'gpt-4o-mini';
+  api.env.OPENAI_MODEL = 'gpt-6-luna';
   const realFetch = api.env.FETCH;
   api.env.FETCH = async (url, init) => {
     if (String(url).includes('openai.com')) {
       return new Response(JSON.stringify({
-        error: { message: 'The model `gpt-4o-mini` does not exist or you do not have access to it.', code: 'model_not_found' },
+        error: { message: 'The model `gpt-6-luna` does not exist or you do not have access to it.', code: 'model_not_found' },
       }), { status: 404 });
     }
     return realFetch(url, init);
@@ -91,7 +91,7 @@ test('OpenAI: нет доступа к модели — понятное соо�
   const bi = await api.call('POST', `/dcb/sessions/${session.data.session.id}/bi`, { token, body: {} });
   assert.equal(bi.status, 502);
   assert.equal(bi.data.error, 'openai_forbidden');
-  assert.match(bi.data.message, /gpt-4o-mini/);
+  assert.match(bi.data.message, /gpt-6-luna/);
   assert.match(bi.data.message, /OPENAI_MODEL/);
 });
 

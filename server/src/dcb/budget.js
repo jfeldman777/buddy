@@ -3,18 +3,20 @@ import { HttpError, now } from '../http.js';
 
 export const DCB_GRANT_MICROS = 10_000_000; // $10
 export const MICROS_PER_DOLLAR = 1_000_000;
-export const DEFAULT_OPENAI_MODEL = 'gpt-4o-mini';
+// Default: GPT-6 Luna — efficient model available on current OpenAI projects (Oct 2026).
+export const DEFAULT_OPENAI_MODEL = 'gpt-6-luna';
 
-// Micros per 1M tokens (input / output). Unknown models use gpt-4o rates so we never under-reserve.
+// Micros per 1M tokens (input / output). Unknown models reserve as gpt-6.1-sol so we never under-reserve.
 const MODEL_PRICES = {
+  'gpt-6-luna': { version: 'openai-gpt-6-luna', inputPerMillion: 100_000, outputPerMillion: 500_000 },
+  'gpt-6.1-sol': { version: 'openai-gpt-6.1-sol', inputPerMillion: 2_000_000, outputPerMillion: 10_000_000 },
+  'gpt-6-sol': { version: 'openai-gpt-6-sol', inputPerMillion: 2_000_000, outputPerMillion: 10_000_000 },
   'gpt-4o-mini': { version: 'openai-gpt-4o-mini', inputPerMillion: 150_000, outputPerMillion: 600_000 },
   'gpt-4.1-mini': { version: 'openai-gpt-4.1-mini', inputPerMillion: 400_000, outputPerMillion: 1_600_000 },
-  'gpt-4.1-nano': { version: 'openai-gpt-4.1-nano', inputPerMillion: 100_000, outputPerMillion: 400_000 },
   'gpt-4o': { version: 'openai-gpt-4o', inputPerMillion: 2_500_000, outputPerMillion: 10_000_000 },
-  'gpt-3.5-turbo': { version: 'openai-gpt-3.5-turbo', inputPerMillion: 500_000, outputPerMillion: 1_500_000 },
 };
 
-const FALLBACK_PRICE = { version: 'openai-unknown-as-gpt-4o', inputPerMillion: 2_500_000, outputPerMillion: 10_000_000 };
+const FALLBACK_PRICE = { version: 'openai-unknown-as-gpt-6.1-sol', inputPerMillion: 2_000_000, outputPerMillion: 10_000_000 };
 
 // Kept for tests that import the default table.
 export const PRICE_TABLE = { model: DEFAULT_OPENAI_MODEL, ...MODEL_PRICES[DEFAULT_OPENAI_MODEL] };

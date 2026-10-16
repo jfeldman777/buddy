@@ -10,6 +10,26 @@ function estimateInputTokens(system, user) {
   return Math.ceil((system.length + user.length) / 3) + 40;
 }
 
+function buildChatBody(model, system, user) {
+  const body = {
+    model,
+    temperature: 0.7,
+    response_format: { type: 'json_object' },
+    messages: [
+      { role: 'system', content: system },
+      { role: 'user', content: user },
+    ],
+  };
+  // GPT-6 family: completion budget + no reasoning tokens for structured JSON replies.
+  if (/^gpt-6/i.test(model)) {
+    body.max_completion_tokens = MAX_OUTPUT_TOKENS;
+    body.reasoning_effort = 'none';
+  } else {
+    body.max_tokens = MAX_OUTPUT_TOKENS;
+  }
+  return body;
+}
+
 function parseJsonContent(text) {
   const trimmed = String(text ?? '').trim();
   const fence = trimmed.match(/^```(?:json)?\s*([\s\S]*?)```$/i);
@@ -77,16 +97,7 @@ export async function chatJson(env, { sessionId, speaker, system, user }) {
         Authorization: `Bearer ${env.OPENAI_API_KEY}`,
         'Content-Type': 'application/json',
       },
-      body: JSON.stringify({
-        model: prices.model,
-        temperature: 0.7,
-        max_tokens: MAX_OUTPUT_TOKENS,
-        response_format: { type: 'json_object' },
-        messages: [
-          { role: 'system', content: system },
-          { role: 'user', content: user },
-        ],
-      }),
+      body: JSON.stringify(buildChatBody(prices.model, system, user)),
     });
   } catch {
     await release(env, reservation.id);
