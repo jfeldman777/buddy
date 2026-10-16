@@ -155,7 +155,8 @@ function showSession(session) {
   $('dcb-session').hidden = false;
   const mode = session.mode === 'large' ? 'большой' : 'малый';
   const statusLabel = { running: 'идёт', paused: 'пауза', finished: 'завершён' }[session.status] ?? session.status;
-  const photoNote = session.hasPhoto ? ' · фото для Би' : '';
+  const photoCount = session.photoCount ?? session.photos?.length ?? 0;
+  const photoNote = photoCount ? ` · фото: ${photoCount}` : '';
   $('dcb-session-meta').textContent = `${session.personaTitle} · режим ${mode} · ${statusLabel} · вопросов Би: ${session.questionCount} · стратегия ${session.biStrategyVersion}${photoNote}`;
   const active = session.status === 'running' || session.status === 'paused';
   $('dcb-pause').hidden = session.status !== 'running';
@@ -164,7 +165,25 @@ function showSession(session) {
   $('dcb-step').hidden = !active;
   $('dcb-promote').hidden = session.mode === 'large' || session.status === 'finished';
   $('dcb-finish').hidden = session.status === 'finished';
+  $('dcb-session-photos').hidden = session.status === 'finished' && !photoCount;
+  $('dcb-session-photo-add').disabled = !active;
+  $('dcb-session-photo').disabled = !active;
   $('dcb-secret').textContent = session.secretBio ?? '';
+
+  const photoList = $('dcb-session-photo-list');
+  photoList.replaceChildren(...(session.photos ?? []).map((p) => {
+    const li = document.createElement('li');
+    if (p.photoData) {
+      const img = document.createElement('img');
+      img.src = p.photoData;
+      img.alt = p.label || `Фото ${p.seq}`;
+      li.append(img);
+    }
+    const cap = document.createElement('span');
+    cap.textContent = p.label ? `№${p.seq}: ${p.label}` : `№${p.seq}`;
+    li.append(cap);
+    return li;
+  }));
 
   const pairs = session.messages.filter((m) => m.speaker === 'bi').length;
   $('dcb-log-count').textContent = pairs ? `(пар реплик: ${pairs})` : '';
@@ -271,11 +290,27 @@ $('dcb-persona-form').addEventListener('submit', (event) => {
     $('dcb-persona-form').reset();
     $('dcb-persona-id').value = '';
     $('dcb-persona-reset').hidden = true;
+    const photoNote = pendingPhoto ? ' Портрет сохранён.' : pendingPhoto === null ? ' Портрет убран.' : '';
     resetPhotoForm();
     await refreshPersonas();
-    showStatus('Си сохранён.');
+    showStatus(id ? `Си обновлён.${photoNote}` : `Си сохранён.${photoNote}`);
   });
 });
+
+$('dcb-session-photo-add').addEventListener('click', () => act(async () => {
+  if (!current || (current.status !== 'running' && current.status !== 'paused')) {
+    throw new Error('Откройте идущий или на паузе сеанс, чтобы добавить фото.');
+  }
+  const file = $('dcb-session-photo').files?.[0];
+  if (!file) throw new Error('Выберите файл фото.');
+  const photoData = await fileToPhotoDataUrl(file);
+  const label = $('dcb-session-photo-label').value.trim();
+  const { session, photo } = await api.dcbAddPhoto(auth.token, current.id, { photoData, label });
+  showSession(session);
+  $('dcb-session-photo').value = '';
+  $('dcb-session-photo-label').value = '';
+  showStatus(`Фото №${photo.seq} показано Би — учтёт на следующем ходе.`);
+}));
 
 $('dcb-persona-reset').addEventListener('click', () => {
   $('dcb-persona-form').reset();

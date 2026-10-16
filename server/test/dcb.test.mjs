@@ -67,9 +67,12 @@ test('промпт Би с фото: угадать можно, но нужно 
     messages: [],
     model: { biography: '', facts: [], hypotheses: [], unknowns: [] },
     hasPhoto: true,
+    photos: [{ seq: 1, label: 'портрет' }, { seq: 2, label: 'дом' }],
   });
   assert.match(bi.system, /фото/i);
   assert.match(bi.system, /подтвержд/i);
+  assert.match(bi.user, /фото №2/);
+  assert.match(bi.user, /дом/);
   assert.doesNotMatch(`${bi.system}\n${bi.user}`, new RegExp(SECRET_MARKER));
   assert.doesNotMatch(`${bi.system}\n${bi.user}`, new RegExp(secret));
 });
@@ -122,6 +125,8 @@ test('схема DCB отделена от личных диалогов Buddy; 
   assert.match(schema, /personal chats and journal stay on the device/i);
   const photo = await readFile(new URL('../migrations/0003_dcb_photo.sql', import.meta.url), 'utf8');
   assert.match(photo, /photo_data/);
+  const sessionPhotos = await readFile(new URL('../migrations/0004_dcb_session_photos.sql', import.meta.url), 'utf8');
+  assert.match(sessionPhotos, /dcb_session_photos/);
 });
 
 test('DCB: только elevated admin; CRUD Си; изоляция маркера в вызовах OpenAI', async () => {
@@ -153,15 +158,19 @@ test('DCB: только elevated admin; CRUD Си; изоляция маркер
   assert.equal(withPhoto.data.persona.hasPhoto, true);
   assert.equal(withPhoto.data.persona.photoData, tinyPhoto);
 
+  const secondPhoto = 'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8BQDwAEhQGAhKmMIQAAAABJRU5ErkJggg==';
+  let biCalls = 0;
   const calls = mockOpenAi(api, (body) => {
     const blob = JSON.stringify(body.messages);
     const isBi = /Вы — Би/.test(blob);
     const isSi = /Вы — Си/.test(blob);
     if (isBi) {
+      biCalls += 1;
       assert.doesNotMatch(blob, new RegExp(SECRET_MARKER), 'утечка секрета в ход Би');
       const user = body.messages.find((m) => m.role === 'user');
       assert.ok(Array.isArray(user.content), 'Би получает multimodal с фото');
-      assert.ok(user.content.some((p) => p.type === 'image_url' && p.image_url?.url === tinyPhoto));
+      const urls = user.content.filter((p) => p.type === 'image_url').map((p) => p.image_url?.url);
+      assert.ok(urls.includes(tinyPhoto) || urls.includes(secondPhoto), 'Би видит фото сеанса');
       return { json: { utterance: 'По фото похоже, вы женщина — так?', facts: [], hypotheses: ['женщина'], unknowns: ['возраст', 'обращение'], biography: '' } };
     }
     if (isSi) {
@@ -179,11 +188,34 @@ test('DCB: только elevated admin; CRUD Си; изоляция маркер
   assert.equal(session.status, 201);
   assert.equal(session.data.session.mode, 'small');
   assert.equal(session.data.session.hasPhoto, true);
+  assert.equal(session.data.session.photoCount, 1);
+  assert.equal(session.data.session.photos[0].label, 'портрет');
   assert.match(session.data.session.biStrategyVersion, /dcb-bi-facts-v2/);
+
+  const added = await api.call('POST', `/dcb/sessions/${session.data.session.id}/photos`, {
+    token,
+    body: { photoData: secondPhoto, label: 'с друзьями' },
+  });
+  assert.equal(added.status, 201);
+  assert.equal(added.data.session.photoCount, 2);
+  assert.equal(added.data.photo.seq, 2);
+
+  // Photo-only patch on persona still allowed while session is active.
+  const photoOnly = await api.call('PATCH', `/dcb/personas/${created.data.persona.id}`, {
+    token,
+    body: { photoData: tinyPhoto },
+  });
+  assert.equal(photoOnly.status, 200);
+  const bioBlocked = await api.call('PATCH', `/dcb/personas/${created.data.persona.id}`, {
+    token,
+    body: { secretBio: 'Новое описание' },
+  });
+  assert.equal(bioBlocked.status, 409);
 
   const bi = await api.call('POST', `/dcb/sessions/${session.data.session.id}/bi`, { token, body: {} });
   assert.equal(bi.status, 200);
   assert.equal(bi.data.message.speaker, 'bi');
+  assert.ok(biCalls >= 1);
 
   const si = await api.call('POST', `/dcb/sessions/${session.data.session.id}/si`, { token, body: {} });
   assert.equal(si.status, 200);

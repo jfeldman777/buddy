@@ -1,4 +1,4 @@
-﻿<!doctype html>
+<!doctype html>
 <html lang="ru">
 <head>
   <meta charset="utf-8">
@@ -31,16 +31,16 @@
 
       <section class="card" id="dcb-personas-section">
         <h2>А. Создание Си</h2>
-        <p class="note">Описание видите только вы. Би получает лишь диалог и свои записи.</p>
+        <p class="note">Описание видите только вы. Би получает лишь диалог и свои записи. Чтобы добавить фото к уже созданному Си — откройте его в списке, выберите файл и сохраните.</p>
         <ul id="dcb-persona-list" class="dcb-list"></ul>
         <form id="dcb-persona-form" class="dcb-form">
           <label for="dcb-persona-title">Название</label>
           <input id="dcb-persona-title" maxlength="120" required placeholder="Например: Анна, 34 года">
           <label for="dcb-persona-bio">Биография, люди, связи, особенности общения</label>
           <textarea id="dcb-persona-bio" rows="8" maxlength="20000" required placeholder="Свободный текст. Раскрывайте факты так, как Си мог бы говорить о себе постепенно. Укажите пол, возраст и как обращаться, если хотите, чтобы Си отвечал сразу."></textarea>
-          <label for="dcb-persona-photo">Фото Си (необязательно, до диалога)</label>
+          <label for="dcb-persona-photo">Фото-портрет Си (необязательно)</label>
           <input type="file" id="dcb-persona-photo" accept="image/jpeg,image/png,image/webp">
-          <p class="note">Би увидит фото и может угадать пол/возраст, но попросит подтверждение. Скрытую биографию по фото не читает.</p>
+          <p class="note">Портрет попадёт в сеанс при старте. По ходу беседы можно показывать Би и другие фото — в блоке сеанса.</p>
           <div id="dcb-persona-photo-preview-wrap" class="dcb-photo-wrap" hidden>
             <img id="dcb-persona-photo-preview" class="dcb-photo-preview" alt="Превью фото Си">
             <button type="button" class="btn btn-secondary btn-small" id="dcb-persona-photo-clear">Убрать фото</button>
@@ -76,6 +76,18 @@
             <button type="button" class="btn btn-secondary btn-small" id="dcb-resume" hidden>Продолжить</button>
             <button type="button" class="btn btn-secondary btn-small" id="dcb-promote">В большой режим</button>
             <button type="button" class="btn btn-secondary btn-small" id="dcb-finish">Завершить</button>
+          </div>
+          <div id="dcb-session-photos" class="dcb-session-photos">
+            <h3>Фото для Би</h3>
+            <p class="note">Можно добавить несколько кадров по ходу беседы. Би увидит новые на следующем ходе (с подтверждением у Си).</p>
+            <div class="dcb-photo-upload">
+              <label for="dcb-session-photo">Новое фото</label>
+              <input type="file" id="dcb-session-photo" accept="image/jpeg,image/png,image/webp">
+              <label for="dcb-session-photo-label">Подпись (необязательно)</label>
+              <input id="dcb-session-photo-label" maxlength="120" placeholder="Например: с друзьями, дом">
+              <button type="button" class="btn btn-secondary btn-small" id="dcb-session-photo-add">Показать Би</button>
+            </div>
+            <ul id="dcb-session-photo-list" class="dcb-photo-list"></ul>
           </div>
           <div class="dcb-columns">
             <div>
@@ -148,7 +160,7 @@
     <a href="./">Buddy</a>
     <a href="admin.html">Администратор</a>
     <a href="https://github.com/jfeldman777/buddy">Исходный код</a>
-    <span>Alpha 0.01 · версия <span data-version>011</span></span>
+    <span>Alpha 0.01 · версия <span data-version>012</span></span>
     <button type="button" class="link-button" data-check-update>Проверить обновления</button>
   </footer>
 </body>

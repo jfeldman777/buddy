@@ -62,6 +62,7 @@ export function createApi(base, fetchImpl = (...args) => fetch(...args)) {
     dcbResume: (token, id) => call('POST', `/dcb/sessions/${id}/resume`, { token, body: {} }),
     dcbFinish: (token, id) => call('POST', `/dcb/sessions/${id}/finish`, { token, body: {} }),
     dcbPromote: (token, id) => call('POST', `/dcb/sessions/${id}/promote`, { token, body: {} }),
+    dcbAddPhoto: (token, id, body) => call('POST', `/dcb/sessions/${id}/photos`, { token, body }),
     dcbBi: (token, id) => call('POST', `/dcb/sessions/${id}/bi`, { token, body: {} }),
     dcbSi: (token, id) => call('POST', `/dcb/sessions/${id}/si`, { token, body: {} }),
     dcbReview: (token, id, body) => call('POST', `/dcb/sessions/${id}/review`, { token, body }),

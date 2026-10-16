@@ -6,17 +6,25 @@ import {
 const OPENAI_URL = 'https://api.openai.com/v1/chat/completions';
 export const MAX_OUTPUT_TOKENS = 500;
 
+function normalizeImages(imageDataUrl) {
+  if (!imageDataUrl) return [];
+  const list = Array.isArray(imageDataUrl) ? imageDataUrl : [imageDataUrl];
+  return list.filter((url) => typeof url === 'string' && url);
+}
+
 function estimateInputTokens(system, user, imageDataUrl) {
-  const imageTokens = imageDataUrl ? 800 : 0;
+  const images = normalizeImages(imageDataUrl);
+  const imageTokens = images.length * 800;
   const text = typeof user === 'string' ? user : JSON.stringify(user);
   return Math.ceil((system.length + text.length) / 3) + 40 + imageTokens;
 }
 
 function userContent(user, imageDataUrl) {
-  if (!imageDataUrl) return user;
+  const images = normalizeImages(imageDataUrl);
+  if (!images.length) return user;
   return [
     { type: 'text', text: user },
-    { type: 'image_url', image_url: { url: imageDataUrl } },
+    ...images.map((url) => ({ type: 'image_url', image_url: { url } })),
   ];
 }
 

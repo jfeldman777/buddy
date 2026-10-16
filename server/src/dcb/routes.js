@@ -12,6 +12,9 @@ const TEXT_MAX = 4_000;
 const PERSONA_BODY_MAX = 400 * 1024;
 const PHOTO_DATA_MAX = 350_000;
 const PHOTO_RE = /^data:image\/(jpeg|png|webp);base64,[A-Za-z0-9+/=\s]+$/;
+const MAX_SESSION_PHOTOS = 20;
+const BI_PHOTOS_PER_TURN = 2;
+const LABEL_MAX = 120;
 
 const iso = (env) => new Date(now(env)).toISOString();
 
@@ -71,18 +74,40 @@ async function loadMemory(env, sessionId) {
   return results;
 }
 
+async function loadSessionPhotos(env, sessionId) {
+  const { results } = await env.DB.prepare(
+    'SELECT id, photo_data, label, created_at AS at, seq FROM dcb_session_photos WHERE session_id = ?1 ORDER BY seq',
+  ).bind(sessionId).all();
+  return results;
+}
+
 async function nextSeq(env, sessionId) {
   const row = await env.DB.prepare('SELECT COALESCE(MAX(seq), 0) AS m FROM dcb_messages WHERE session_id = ?1').bind(sessionId).first();
   return row.m + 1;
 }
 
+async function nextPhotoSeq(env, sessionId) {
+  const row = await env.DB.prepare('SELECT COALESCE(MAX(seq), 0) AS m FROM dcb_session_photos WHERE session_id = ?1').bind(sessionId).first();
+  return row.m + 1;
+}
+
+function photoMeta(row) {
+  return { id: row.id, label: row.label ?? '', at: row.at, seq: row.seq };
+}
+
 async function sessionView(env, session, { includeSecret = false } = {}) {
   const messages = await loadMessages(env, session.id);
   const memory = await loadMemory(env, session.id);
+  const photosRaw = await loadSessionPhotos(env, session.id);
   const modelRow = await env.DB.prepare('SELECT * FROM dcb_bi_model WHERE session_id = ?1').bind(session.id).first();
   const review = await env.DB.prepare('SELECT score, good, mistakes, missed, comment FROM dcb_reviews WHERE session_id = ?1').bind(session.id).first();
   const ideas = await env.DB.prepare('SELECT strategy, acquaintance, si_notes AS siNotes, next_trials AS nextTrials FROM dcb_ideas WHERE session_id = ?1').bind(session.id).first();
   const budget = await budgetView(env);
+  const photos = photosRaw.map((row) => {
+    const meta = photoMeta(row);
+    if (includeSecret) meta.photoData = row.photo_data;
+    return meta;
+  });
   const view = {
     id: session.id,
     personaId: session.persona_id,
@@ -90,7 +115,9 @@ async function sessionView(env, session, { includeSecret = false } = {}) {
     mode: session.mode,
     status: session.status,
     biStrategyVersion: session.bi_strategy_version,
-    hasPhoto: Boolean(session.photo_data),
+    hasPhoto: photos.length > 0 || Boolean(session.photo_data),
+    photoCount: photos.length,
+    photos,
     startedAt: session.started_at,
     finishedAt: session.finished_at,
     questionCount: session.question_count,
@@ -167,10 +194,6 @@ async function patchPersona(request, env, id) {
   const session = await requireDi(request, env);
   const row = await env.DB.prepare('SELECT * FROM dcb_personas WHERE id = ?1 AND di_user_id = ?2').bind(id, session.userId).first();
   if (!row) throw new HttpError(404, 'not_found', 'Си не найден.');
-  const active = await env.DB.prepare(
-    `SELECT id FROM dcb_sessions WHERE persona_id = ?1 AND status IN ('running', 'paused') LIMIT 1`,
-  ).bind(id).first();
-  if (active) throw new HttpError(409, 'in_session', 'Нельзя менять описание Си во время незавершённого сеанса.');
   const body = await readJson(request, { maxBytes: PERSONA_BODY_MAX });
   const title = body.title !== undefined ? String(body.title).trim() : row.title;
   const secretBio = body.secretBio !== undefined ? String(body.secretBio).trim() : row.secret_bio;
@@ -179,6 +202,14 @@ async function patchPersona(request, env, id) {
   const photoData = body.photoData !== undefined
     ? parsePhotoData(body.photoData, { allowNull: true })
     : row.photo_data;
+  const titleChanged = title !== row.title;
+  const bioChanged = secretBio !== row.secret_bio;
+  if (titleChanged || bioChanged) {
+    const active = await env.DB.prepare(
+      `SELECT id FROM dcb_sessions WHERE persona_id = ?1 AND status IN ('running', 'paused') LIMIT 1`,
+    ).bind(id).first();
+    if (active) throw new HttpError(409, 'in_session', 'Нельзя менять описание Си во время незавершённого сеанса. Фото можно добавить в сеансе ниже.');
+  }
   const at = iso(env);
   await env.DB.prepare('UPDATE dcb_personas SET title = ?1, secret_bio = ?2, photo_data = ?3, updated_at = ?4 WHERE id = ?5')
     .bind(title, secretBio, photoData, at, id).run();
@@ -222,7 +253,7 @@ async function createSession(request, env) {
   if (!persona) throw new HttpError(404, 'not_found', 'Си не найден.');
   const id = crypto.randomUUID();
   const at = iso(env);
-  await env.DB.batch([
+  const statements = [
     env.DB.prepare(
       `INSERT INTO dcb_sessions (id, di_user_id, persona_id, mode, status, bi_strategy_version, started_at, question_count)
        VALUES (?1, ?2, ?3, ?4, 'running', ?5, ?6, 0)`,
@@ -231,9 +262,41 @@ async function createSession(request, env) {
       `INSERT INTO dcb_bi_model (session_id, biography, facts_json, hypotheses_json, unknowns_json, updated_at)
        VALUES (?1, '', '[]', '[]', '[]', ?2)`,
     ).bind(id, at),
-  ]);
+  ];
+  if (persona.photo_data) {
+    statements.push(env.DB.prepare(
+      `INSERT INTO dcb_session_photos (id, session_id, photo_data, label, created_at, seq)
+       VALUES (?1, ?2, ?3, ?4, ?5, 1)`,
+    ).bind(crypto.randomUUID(), id, persona.photo_data, 'портрет', at));
+  }
+  await env.DB.batch(statements);
   const loaded = await loadSession(env, id, di.userId);
   return json({ session: await sessionView(env, loaded, { includeSecret: true }) }, 201);
+}
+
+async function addSessionPhoto(request, env, id) {
+  const di = await requireDi(request, env);
+  const loaded = await loadSession(env, id, di.userId);
+  if (loaded.status === 'finished') throw new HttpError(409, 'finished', 'Сеанс завершён — фото добавить нельзя.');
+  const body = await readJson(request, { maxBytes: PERSONA_BODY_MAX });
+  const photoData = parsePhotoData(body.photoData);
+  const label = typeof body.label === 'string' ? body.label.trim().slice(0, LABEL_MAX) : '';
+  const countRow = await env.DB.prepare('SELECT COUNT(*) AS n FROM dcb_session_photos WHERE session_id = ?1').bind(id).first();
+  if (Number(countRow.n) >= MAX_SESSION_PHOTOS) {
+    throw new HttpError(400, 'photo_limit', `В одном сеансе не больше ${MAX_SESSION_PHOTOS} фото.`);
+  }
+  const at = iso(env);
+  const seq = await nextPhotoSeq(env, id);
+  const photoId = crypto.randomUUID();
+  await env.DB.prepare(
+    `INSERT INTO dcb_session_photos (id, session_id, photo_data, label, created_at, seq)
+     VALUES (?1, ?2, ?3, ?4, ?5, ?6)`,
+  ).bind(photoId, id, photoData, label, at, seq).run();
+  const next = await loadSession(env, id, di.userId);
+  return json({
+    session: await sessionView(env, next, { includeSecret: true }),
+    photo: { id: photoId, label, at, seq, photoData },
+  }, 201);
 }
 
 async function getSession(request, env, id) {
@@ -271,15 +334,23 @@ async function biTurn(request, env, id) {
   const messages = await loadMessages(env, id);
   const modelRow = await env.DB.prepare('SELECT * FROM dcb_bi_model WHERE session_id = ?1').bind(id).first();
   const model = parseModel(modelRow);
-  const photoData = typeof loaded.photo_data === 'string' && loaded.photo_data ? loaded.photo_data : null;
-  // Isolation: mode, messages, model, optional photo — never secret_bio.
-  const prompt = buildBiPrompt({ mode: loaded.mode, messages, model, hasPhoto: Boolean(photoData) });
+  const photosRaw = await loadSessionPhotos(env, id);
+  const photosMeta = photosRaw.map((p) => ({ seq: p.seq, label: p.label ?? '' }));
+  // Latest photos for multimodal (cost-limited); never secret_bio.
+  const imageUrls = photosRaw.slice(-BI_PHOTOS_PER_TURN).map((p) => p.photo_data);
+  const prompt = buildBiPrompt({
+    mode: loaded.mode,
+    messages,
+    model,
+    hasPhoto: photosRaw.length > 0,
+    photos: photosMeta,
+  });
   const { json: reply } = await chatJson(env, {
     sessionId: id,
     speaker: 'bi',
     system: prompt.system,
     user: prompt.user,
-    imageDataUrl: photoData,
+    imageDataUrl: imageUrls.length ? imageUrls : null,
   });
   const utterance = typeof reply.utterance === 'string' ? reply.utterance.trim() : '';
   if (!utterance || utterance.length > TEXT_MAX) throw new HttpError(502, 'model_bad_json', 'Би не дал понятной реплики.');
@@ -418,6 +489,7 @@ export async function handleDcb(request, env) {
   if ((m = /^POST \/dcb\/sessions\/([^/]+)\/resume$/.exec(`${method} ${path}`))) return setStatus(request, env, m[1], 'running');
   if ((m = /^POST \/dcb\/sessions\/([^/]+)\/finish$/.exec(`${method} ${path}`))) return setStatus(request, env, m[1], 'finished');
   if ((m = /^POST \/dcb\/sessions\/([^/]+)\/promote$/.exec(`${method} ${path}`))) return promoteLarge(request, env, m[1]);
+  if ((m = /^POST \/dcb\/sessions\/([^/]+)\/photos$/.exec(`${method} ${path}`))) return addSessionPhoto(request, env, m[1]);
   if ((m = /^POST \/dcb\/sessions\/([^/]+)\/bi$/.exec(`${method} ${path}`))) return biTurn(request, env, m[1]);
   if ((m = /^POST \/dcb\/sessions\/([^/]+)\/si$/.exec(`${method} ${path}`))) return siReply(request, env, m[1]);
   if ((m = /^POST \/dcb\/sessions\/([^/]+)\/review$/.exec(`${method} ${path}`))) return saveReview(request, env, m[1]);

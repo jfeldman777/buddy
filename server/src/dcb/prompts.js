@@ -1,8 +1,8 @@
 // Separate prompt builders. Bi's path must never receive secret_bio — isolation tests enforce this.
-// Photo (if any) is intentionally visible to Bi: Di showed it for appearance cues.
+// Photos (if any) are intentionally visible to Bi: Di showed them for appearance / context cues.
 export const BI_STRATEGY_VERSION = 'dcb-bi-facts-v2';
 
-const biSystem = (mode, { hasPhoto }) => `Вы — Би, ИИ-помощник Buddy. Вы исследуете собеседника Си через диалог на русском языке.
+const biSystem = (mode, { photoCount }) => `Вы — Би, ИИ-помощник Buddy. Вы исследуете собеседника Си через диалог на русском языке.
 Слой исследования: факты биографии, люди и связи (версия стратегии ${BI_STRATEGY_VERSION}).
 Режим сеанса: ${mode === 'large' ? 'большой — Си может достраивать биографию; проверяйте согласованность' : 'малый — Си отвечает только из известных сведений и не выдумывает'}.
 
@@ -12,7 +12,9 @@ const biSystem = (mode, { hasPhoto }) => `Вы — Би, ИИ-помощник B
 3) как к Си обращаться: имя или как представиться, «ты» или «вы».
 Только после этого переходите к другим фактам биографии и людям.
 
-${hasPhoto ? `Ди приложил фото Си. По фото можете выдвинуть предположение о поле и возрасте, но ОБЯЗАТЕЛЬНО спросите подтверждение у Си («похоже, вам около… это так?»). Не утверждайте внешность как факт без ответа Си.` : 'Фото нет — выясняйте пол, возраст и обращение только вопросами.'}
+${photoCount > 0
+    ? `Ди приложил ${photoCount} фото Си (ниже в запросе — последние кадры). По фото можете выдвинуть предположение о поле, возрасте или обстановке, но ОБЯЗАТЕЛЬНО спросите подтверждение у Си. Если пришло новое фото — заметьте его и при необходимости уточните у Си, что на нём. Не утверждайте внешность как факт без ответа Си.`
+    : 'Фото нет — выясняйте пол, возраст и обращение только вопросами.'}
 
 Правила:
 - Задавайте короткие ясные вопросы, по одному существенному вопросу за ход.
@@ -55,10 +57,28 @@ function priorityHints(model) {
   return `Сейчас в первую очередь выясните: ${missing.join(', ')}.`;
 }
 
-// ONLY for Bi. Do not add secret_bio here. Photo is optional and intentional for Bi.
-export function buildBiPrompt({ mode, messages, model, hasPhoto = false }) {
+function photoBlock(photos) {
+  if (!photos.length) return 'Фото в этом сеансе пока нет.';
+  const lines = photos.map((p) => {
+    const label = p.label ? ` — ${p.label}` : '';
+    return `- фото №${p.seq}${label}`;
+  });
+  const latest = photos[photos.length - 1];
+  return [
+    `Фото сеанса (${photos.length}):`,
+    ...lines,
+    `К запросу приложены последние кадры (актуальное — №${latest.seq}). Учитывайте новое фото, если оно только что появилось.`,
+  ].join('\n');
+}
+
+// ONLY for Bi. Do not add secret_bio here. Photos are optional and intentional for Bi.
+// photos: [{ seq, label }] — metadata only (image bytes go via multimodal separately).
+export function buildBiPrompt({ mode, messages, model, hasPhoto = false, photos = null }) {
+  const list = Array.isArray(photos) ? photos : (hasPhoto ? [{ seq: 1, label: '' }] : []);
   const state = [
     priorityHints(model),
+    '',
+    photoBlock(list),
     '',
     'Установленные факты:',
     ...(model.facts.length ? model.facts.map((f) => `- ${f}`) : ['(пока нет)']),
@@ -69,7 +89,7 @@ export function buildBiPrompt({ mode, messages, model, hasPhoto = false }) {
     `Текущая биография:\n${model.biography || '(пусто)'}`,
   ].join('\n');
   return {
-    system: biSystem(mode, { hasPhoto }),
+    system: biSystem(mode, { photoCount: list.length }),
     user: `${state}\n\nДиалог:\n${dialogueBlock(messages)}\n\nСделайте следующий ход Би.`,
   };
 }
