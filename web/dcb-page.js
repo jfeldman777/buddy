@@ -1,0 +1,320 @@
+import { registerServiceWorker } from './pwa.js';
+import { openStorage } from './storage.js';
+import { api } from './api.js';
+import { currentUser } from './account.js';
+
+registerServiceWorker();
+
+const $ = (id) => document.getElementById(id);
+const status = $('dcb-status');
+const storage = await openStorage();
+
+let auth = null;
+let personas = [];
+let current = null;
+
+function showStatus(text) {
+  status.textContent = text;
+  status.hidden = !text;
+  if (text) status.scrollIntoView({ block: 'nearest', behavior: 'smooth' });
+}
+
+function dollars(micros) {
+  return (micros / 1_000_000).toFixed(4);
+}
+
+async function act(action) {
+  showStatus('');
+  try {
+    await action();
+  } catch (error) {
+    console.warn(error);
+    showStatus(error.message || 'Ошибка.');
+  }
+}
+
+function renderBudget(budget) {
+  $('dcb-budget').textContent = `Бюджет DCB: осталось $${dollars(budget.remainingMicros)} из $${dollars(budget.grantedMicros)} (потрачено $${dollars(budget.spentMicros)}).`;
+}
+
+function renderPersonas() {
+  const list = $('dcb-persona-list');
+  list.replaceChildren(...personas.map((p) => {
+    const li = document.createElement('li');
+    const open = document.createElement('button');
+    open.type = 'button';
+    open.className = 'link-button';
+    open.textContent = p.title;
+    open.addEventListener('click', () => act(async () => {
+      const { persona } = await api.dcbGetPersona(auth.token, p.id);
+      $('dcb-persona-id').value = persona.id;
+      $('dcb-persona-title').value = persona.title;
+      $('dcb-persona-bio').value = persona.secretBio;
+      $('dcb-persona-reset').hidden = false;
+      $('dcb-start-persona').value = persona.id;
+    }));
+    const del = document.createElement('button');
+    del.type = 'button';
+    del.className = 'btn btn-secondary btn-small';
+    del.textContent = 'Удалить';
+    del.addEventListener('click', () => act(async () => {
+      if (!window.confirm(`Удалить Си «${p.title}»?`)) return;
+      await api.dcbDeletePersona(auth.token, p.id);
+      await refreshPersonas();
+      showStatus('Си удалён.');
+    }));
+    li.append(open, ' ', del);
+    return li;
+  }));
+  const select = $('dcb-start-persona');
+  select.replaceChildren(...personas.map((p) => {
+    const opt = document.createElement('option');
+    opt.value = p.id;
+    opt.textContent = p.title;
+    return opt;
+  }));
+  $('dcb-start-form').hidden = personas.length === 0;
+}
+
+async function refreshPersonas() {
+  const data = await api.dcbPersonas(auth.token);
+  personas = data.personas;
+  renderPersonas();
+}
+
+async function refreshSessions() {
+  const { sessions } = await api.dcbSessions(auth.token);
+  const list = $('dcb-session-list');
+  list.replaceChildren(...sessions.map((s) => {
+    const li = document.createElement('li');
+    const btn = document.createElement('button');
+    btn.type = 'button';
+    btn.className = 'link-button';
+    btn.textContent = `${s.personaTitle} · ${s.mode === 'large' ? 'большой' : 'малый'} · ${s.status} · ${new Date(s.startedAt).toLocaleString('ru-RU')}`;
+    btn.addEventListener('click', () => act(async () => {
+      const { session } = await api.dcbGetSession(auth.token, s.id);
+      showSession(session);
+    }));
+    li.append(btn);
+    return li;
+  }));
+}
+
+function showSession(session) {
+  current = session;
+  renderBudget(session.budget);
+  $('dcb-session').hidden = false;
+  const mode = session.mode === 'large' ? 'большой' : 'малый';
+  const statusLabel = { running: 'идёт', paused: 'пауза', finished: 'завершён' }[session.status] ?? session.status;
+  $('dcb-session-meta').textContent = `${session.personaTitle} · режим ${mode} · ${statusLabel} · вопросов Би: ${session.questionCount} · стратегия ${session.biStrategyVersion}`;
+  $('dcb-pause').hidden = session.status !== 'running';
+  $('dcb-resume').hidden = session.status !== 'paused';
+  $('dcb-step').hidden = session.status !== 'running';
+  $('dcb-promote').hidden = session.mode === 'large' || session.status === 'finished';
+  $('dcb-finish').hidden = session.status === 'finished';
+  $('dcb-secret').textContent = session.secretBio ?? '';
+
+  const log = $('dcb-log');
+  log.replaceChildren(...session.messages.map((m) => {
+    const li = document.createElement('li');
+    li.className = `msg msg-${m.speaker === 'bi' ? 'bi' : 'user'}`;
+    li.textContent = `${m.speaker === 'bi' ? 'Би' : 'Си'}: ${m.text}`;
+    return li;
+  }));
+
+  const model = session.biModel;
+  $('dcb-bi-model').textContent = [
+    'Факты:',
+    ...(model.facts.length ? model.facts.map((f) => `• ${f}`) : ['• —']),
+    '',
+    'Предположения:',
+    ...(model.hypotheses.length ? model.hypotheses.map((f) => `• ${f}`) : ['• —']),
+    '',
+    'Неясности:',
+    ...(model.unknowns.length ? model.unknowns.map((f) => `• ${f}`) : ['• —']),
+    '',
+    'Биография:',
+    model.biography || '—',
+  ].join('\n');
+
+  $('dcb-memory').replaceChildren(...session.memory.map((m) => {
+    const li = document.createElement('li');
+    li.textContent = `[${m.source === 'from_si' ? 'Си' : 'Ди'}] ${m.fact}`;
+    return li;
+  }));
+
+  const finished = session.status === 'finished';
+  $('dcb-review-section').hidden = !finished;
+  $('dcb-ideas-section').hidden = !finished;
+  if (finished) {
+    $('dcb-report').replaceChildren(
+      elReport('Исходное описание Си', session.secretBio),
+      elReport('Восстановленная Би биография', model.biography || '—'),
+      elReport('Установленные факты Би', model.facts.join('\n') || '—'),
+      elReport('Предположения', model.hypotheses.join('\n') || '—'),
+      elReport('Неясности', model.unknowns.join('\n') || '—'),
+      elReport('Факты памяти сеанса', session.memory.map((m) => `[${m.source}] ${m.fact}`).join('\n') || '—'),
+      elReport('Число вопросов / длительность', `${session.questionCount} · ${duration(session.startedAt, session.finishedAt)}`),
+    );
+    if (session.review) {
+      $('dcb-score').value = String(session.review.score);
+      $('dcb-good').value = session.review.good ?? '';
+      $('dcb-mistakes').value = session.review.mistakes ?? '';
+      $('dcb-missed').value = session.review.missed ?? '';
+      $('dcb-comment').value = session.review.comment ?? '';
+    }
+    if (session.ideas) {
+      $('dcb-idea-strategy').value = session.ideas.strategy ?? '';
+      $('dcb-idea-acquaintance').value = session.ideas.acquaintance ?? '';
+      $('dcb-idea-si').value = session.ideas.siNotes ?? '';
+      $('dcb-idea-next').value = session.ideas.nextTrials ?? '';
+    }
+  }
+}
+
+function elReport(title, text) {
+  const box = document.createElement('div');
+  box.className = 'dcb-report-block';
+  const h = document.createElement('h3');
+  h.textContent = title;
+  const pre = document.createElement('pre');
+  pre.className = 'dcb-pre';
+  pre.textContent = text;
+  box.append(h, pre);
+  return box;
+}
+
+function duration(start, end) {
+  if (!start || !end) return '—';
+  const ms = new Date(end) - new Date(start);
+  const min = Math.floor(ms / 60000);
+  const sec = Math.floor((ms % 60000) / 1000);
+  return `${min} мин ${sec} с`;
+}
+
+$('dcb-persona-form').addEventListener('submit', (event) => {
+  event.preventDefault();
+  act(async () => {
+    const id = $('dcb-persona-id').value;
+    const body = { title: $('dcb-persona-title').value, secretBio: $('dcb-persona-bio').value };
+    if (id) await api.dcbPatchPersona(auth.token, id, body);
+    else await api.dcbCreatePersona(auth.token, body);
+    $('dcb-persona-form').reset();
+    $('dcb-persona-id').value = '';
+    $('dcb-persona-reset').hidden = true;
+    await refreshPersonas();
+    showStatus('Си сохранён.');
+  });
+});
+
+$('dcb-persona-reset').addEventListener('click', () => {
+  $('dcb-persona-form').reset();
+  $('dcb-persona-id').value = '';
+  $('dcb-persona-reset').hidden = true;
+});
+
+$('dcb-start-form').addEventListener('submit', (event) => {
+  event.preventDefault();
+  act(async () => {
+    const { session } = await api.dcbCreateSession(auth.token, {
+      personaId: $('dcb-start-persona').value,
+      mode: $('dcb-start-mode').value,
+    });
+    showSession(session);
+    await refreshSessions();
+    showStatus('Сеанс начат. Нажмите «Ход Би → ответ Си».');
+  });
+});
+
+$('dcb-step').addEventListener('click', () => act(async () => {
+  if (!current) return;
+  showStatus('Би думает…');
+  const bi = await api.dcbBi(auth.token, current.id);
+  showSession(bi.session);
+  showStatus('Си отвечает…');
+  const si = await api.dcbSi(auth.token, current.id);
+  showSession(si.session);
+  showStatus(si.savedFacts?.length ? `Ход сделан. Новых фактов Си: ${si.savedFacts.length}.` : 'Ход сделан.');
+}));
+
+$('dcb-pause').addEventListener('click', () => act(async () => {
+  showSession((await api.dcbPause(auth.token, current.id)).session);
+  showStatus('Пауза.');
+}));
+
+$('dcb-resume').addEventListener('click', () => act(async () => {
+  showSession((await api.dcbResume(auth.token, current.id)).session);
+  showStatus('Сеанс продолжен.');
+}));
+
+$('dcb-promote').addEventListener('click', () => act(async () => {
+  if (!window.confirm('Перевести сеанс в большой режим? История сохранится.')) return;
+  showSession((await api.dcbPromote(auth.token, current.id)).session);
+  showStatus('Режим: большой.');
+}));
+
+$('dcb-finish').addEventListener('click', () => act(async () => {
+  if (!window.confirm('Завершить сеанс?')) return;
+  showSession((await api.dcbFinish(auth.token, current.id)).session);
+  await refreshSessions();
+  showStatus('Сеанс завершён. Заполните оценку и идеи.');
+}));
+
+$('dcb-review-form').addEventListener('submit', (event) => {
+  event.preventDefault();
+  act(async () => {
+    const { session } = await api.dcbReview(auth.token, current.id, {
+      score: Number($('dcb-score').value),
+      good: $('dcb-good').value,
+      mistakes: $('dcb-mistakes').value,
+      missed: $('dcb-missed').value,
+      comment: $('dcb-comment').value,
+    });
+    showSession(session);
+    showStatus('Оценка сохранена.');
+  });
+});
+
+$('dcb-ideas-form').addEventListener('submit', (event) => {
+  event.preventDefault();
+  act(async () => {
+    const { session } = await api.dcbIdeas(auth.token, current.id, {
+      strategy: $('dcb-idea-strategy').value,
+      acquaintance: $('dcb-idea-acquaintance').value,
+      siNotes: $('dcb-idea-si').value,
+      nextTrials: $('dcb-idea-next').value,
+    });
+    showSession(session);
+    showStatus('Идеи сохранены.');
+  });
+});
+
+$('dcb-export').addEventListener('click', () => act(async () => {
+  const data = await api.dcbExport(auth.token, current.id);
+  const blob = new Blob([JSON.stringify(data, null, 2)], { type: 'application/json' });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href = url;
+  a.download = `dcb-session-${current.id.slice(0, 8)}.json`;
+  document.body.append(a);
+  a.click();
+  a.remove();
+  setTimeout(() => URL.revokeObjectURL(url), 10_000);
+  showStatus('Экспорт сохранён.');
+}));
+
+if (!api.configured) {
+  showStatus('Сервер Buddy не подключён.');
+} else {
+  await act(async () => {
+    auth = await currentUser(storage);
+    if (!auth?.user.admin) {
+      $('dcb-signed-out').hidden = false;
+      return;
+    }
+    $('dcb-app').hidden = false;
+    renderBudget((await api.dcbBudget(auth.token)).budget);
+    await refreshPersonas();
+    await refreshSessions();
+  });
+}

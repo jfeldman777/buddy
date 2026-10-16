@@ -1,0 +1,146 @@
+<!doctype html>
+<html lang="ru">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <title>DCB — тренировка Би — Buddy</title>
+  <meta name="robots" content="noindex">
+  <meta name="theme-color" content="#28ff37">
+  <link rel="manifest" href="manifest.webmanifest">
+  <link rel="icon" type="image/png" sizes="32x32" href="icons/favicon-32.png">
+  <link rel="apple-touch-icon" href="icons/apple-touch-icon.png">
+  <link rel="stylesheet" href="styles.css">
+  <script type="module" src="dcb-page.js"></script>
+</head>
+<body>
+  <main>
+    <p class="back"><a href="admin.html">← Администратор</a></p>
+    <h1>DCB — тренировка Би</h1>
+    <p class="lead">Ди создаёт Си и наблюдает, как Би узнаёт его биографию. Скрытое описание Си Би не видит.</p>
+    <p class="note">Протоколы сеансов хранятся на сервере отдельно от личных разговоров Buddy. Общий бюджет испытаний — $10.</p>
+
+    <p id="dcb-status" class="status" role="status" hidden></p>
+
+    <section id="dcb-signed-out" class="card" hidden>
+      <p>Модуль DCB открыт администратору после входа по passkey.</p>
+      <p><a class="btn btn-primary" href="account.html">Войти</a></p>
+    </section>
+
+    <div id="dcb-app" hidden>
+      <p id="dcb-budget" class="note"></p>
+
+      <section class="card" id="dcb-personas-section">
+        <h2>А. Создание Си</h2>
+        <p class="note">Описание видите только вы. Би получает лишь диалог и свои записи.</p>
+        <ul id="dcb-persona-list" class="dcb-list"></ul>
+        <form id="dcb-persona-form" class="dcb-form">
+          <label for="dcb-persona-title">Название</label>
+          <input id="dcb-persona-title" maxlength="120" required placeholder="Например: Анна, 34 года">
+          <label for="dcb-persona-bio">Биография, люди, связи, особенности общения</label>
+          <textarea id="dcb-persona-bio" rows="8" maxlength="20000" required placeholder="Свободный текст. Раскрывайте факты так, как Си мог бы говорить о себе постепенно."></textarea>
+          <input type="hidden" id="dcb-persona-id">
+          <div class="account-actions">
+            <button type="submit" class="btn btn-primary" id="dcb-persona-save">Сохранить Си</button>
+            <button type="button" class="btn btn-secondary" id="dcb-persona-reset" hidden>Новый Си</button>
+          </div>
+        </form>
+      </section>
+
+      <section class="card" id="dcb-session-section">
+        <h2>Б. Сеанс</h2>
+        <form id="dcb-start-form" class="dcb-form">
+          <label for="dcb-start-persona">Си</label>
+          <select id="dcb-start-persona" required></select>
+          <label for="dcb-start-mode">Режим</label>
+          <select id="dcb-start-mode">
+            <option value="small">Малый — Си не выдумывает</option>
+            <option value="large">Большой — Си может достраивать биографию</option>
+          </select>
+          <button type="submit" class="btn btn-primary">Начать сеанс</button>
+        </form>
+
+        <div id="dcb-session" hidden>
+          <p id="dcb-session-meta" class="note"></p>
+          <div class="account-actions">
+            <button type="button" class="btn btn-primary btn-small" id="dcb-step">Ход Би → ответ Си</button>
+            <button type="button" class="btn btn-secondary btn-small" id="dcb-pause">Пауза</button>
+            <button type="button" class="btn btn-secondary btn-small" id="dcb-resume" hidden>Продолжить</button>
+            <button type="button" class="btn btn-secondary btn-small" id="dcb-promote">В большой режим</button>
+            <button type="button" class="btn btn-secondary btn-small" id="dcb-finish">Завершить</button>
+          </div>
+          <div class="dcb-columns">
+            <div>
+              <h3>Диалог</h3>
+              <ol id="dcb-log" class="chat-log"></ol>
+            </div>
+            <div>
+              <h3>Модель Би</h3>
+              <pre id="dcb-bi-model" class="dcb-pre"></pre>
+              <h3>Память сеанса</h3>
+              <ul id="dcb-memory" class="dcb-list"></ul>
+            </div>
+          </div>
+          <details class="account-more">
+            <summary>Скрытое описание Си (только для Ди)</summary>
+            <pre id="dcb-secret" class="dcb-pre"></pre>
+          </details>
+        </div>
+
+        <h3>Недавние сеансы</h3>
+        <ul id="dcb-session-list" class="dcb-list"></ul>
+      </section>
+
+      <section class="card" id="dcb-review-section" hidden>
+        <h2>В. Результаты и оценка</h2>
+        <div id="dcb-report" class="dcb-report"></div>
+        <form id="dcb-review-form" class="dcb-form">
+          <label for="dcb-score">Общая оценка (1–5)</label>
+          <select id="dcb-score" required>
+            <option value="">—</option>
+            <option value="1">1</option>
+            <option value="2">2</option>
+            <option value="3">3</option>
+            <option value="4">4</option>
+            <option value="5">5</option>
+          </select>
+          <label for="dcb-good">Что Би сделал хорошо</label>
+          <textarea id="dcb-good" rows="2" maxlength="4000"></textarea>
+          <label for="dcb-mistakes">Где ошибся</label>
+          <textarea id="dcb-mistakes" rows="2" maxlength="4000"></textarea>
+          <label for="dcb-missed">Какие возможности упустил</label>
+          <textarea id="dcb-missed" rows="2" maxlength="4000"></textarea>
+          <label for="dcb-comment">Комментарий</label>
+          <textarea id="dcb-comment" rows="2" maxlength="4000"></textarea>
+          <button type="submit" class="btn btn-primary">Сохранить оценку</button>
+        </form>
+      </section>
+
+      <section class="card" id="dcb-ideas-section" hidden>
+        <h2>Г. Идеи Ди</h2>
+        <form id="dcb-ideas-form" class="dcb-form">
+          <label for="dcb-idea-strategy">Предложения по стратегии Би</label>
+          <textarea id="dcb-idea-strategy" rows="2" maxlength="4000"></textarea>
+          <label for="dcb-idea-acquaintance">Новые приёмы знакомства</label>
+          <textarea id="dcb-idea-acquaintance" rows="2" maxlength="4000"></textarea>
+          <label for="dcb-idea-si">Замечания к работе Си</label>
+          <textarea id="dcb-idea-si" rows="2" maxlength="4000"></textarea>
+          <label for="dcb-idea-next">Идеи следующих испытаний</label>
+          <textarea id="dcb-idea-next" rows="2" maxlength="4000"></textarea>
+          <div class="account-actions">
+            <button type="submit" class="btn btn-primary">Сохранить идеи</button>
+            <button type="button" class="btn btn-secondary" id="dcb-export">Экспорт JSON</button>
+          </div>
+        </form>
+      </section>
+    </div>
+  </main>
+
+  <footer>
+    <a href="./">Buddy</a>
+    <a href="admin.html">Администратор</a>
+    <a href="https://github.com/jfeldman777/buddy">Исходный код</a>
+    <span>Alpha 0.01 · версия <span data-version>009</span></span>
+    <button type="button" class="link-button" data-check-update>Проверить обновления</button>
+  </footer>
+</body>
+</html>

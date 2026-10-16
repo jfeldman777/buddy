@@ -90,7 +90,7 @@ test('D2: разговоры, имя и журнал не попадают в м
   for (const file of ['app.js', 'chat.js', 'dialogue.js', 'speech.js', 'listen.js', 'storage.js', 'journal.js', 'journal-page.js', 'declarations.js', 'pwa.js']) {
     assert.doesNotMatch(await read(`web/${file}`), network, `${file} подключает сетевой модуль`);
   }
-  for (const file of ['api.js', 'account.js', 'account-page.js', 'admin-page.js', 'turnstile.js']) {
+  for (const file of ['api.js', 'account.js', 'account-page.js', 'admin-page.js', 'dcb-page.js', 'turnstile.js']) {
     const text = await read(`web/${file}`);
     assert.doesNotMatch(text, /getProfile|saveProfile|recentMessages|addMessage|readJournal|addJournalEntry/, `${file} читает личные данные`);
   }

@@ -11,6 +11,7 @@ import {
   authenticationOptions, verifyAuthentication,
 } from './passkeys.js';
 import { timingSafeEqual } from './crypto.js';
+import { handleDcb } from './dcb/routes.js';
 
 const iso = (env) => new Date(now(env)).toISOString();
 
@@ -217,9 +218,12 @@ export default {
     if (request.method === 'OPTIONS') {
       response = new Response(null, { status: 204 });
     } else {
-      const handler = routes[`${request.method} ${new URL(request.url).pathname}`];
+      const path = new URL(request.url).pathname;
+      const handler = routes[`${request.method} ${path}`];
       try {
-        response = handler ? await handler(request, env) : json({ error: 'not_found', message: 'Нет такого адреса.' }, 404);
+        if (handler) response = await handler(request, env);
+        else if (path.startsWith('/dcb')) response = await handleDcb(request, env);
+        else response = json({ error: 'not_found', message: 'Нет такого адреса.' }, 404);
       } catch (error) {
         if (error instanceof HttpError) {
           response = json({ error: error.code, message: error.message }, error.status);
