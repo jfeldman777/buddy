@@ -28,6 +28,22 @@ function dollars(micros) {
   return (micros / 1_000_000).toFixed(4);
 }
 
+// Clock time to the second, plus gap from the previous replica so Di sees the pace.
+function formatReplicaTime(iso, previousIso) {
+  if (!iso) return '—';
+  const clock = new Date(iso).toLocaleTimeString('ru-RU', {
+    hour: '2-digit',
+    minute: '2-digit',
+    second: '2-digit',
+    hour12: false,
+  });
+  if (!previousIso) return clock;
+  const gapSec = Math.max(0, Math.round((new Date(iso) - new Date(previousIso)) / 1000));
+  const min = Math.floor(gapSec / 60);
+  const sec = String(gapSec % 60).padStart(2, '0');
+  return `${clock} · +${min}:${sec}`;
+}
+
 async function act(action) {
   showStatus('');
   try {
@@ -207,10 +223,18 @@ function showSession(session) {
   const pairs = session.messages.filter((m) => m.speaker === 'bi').length;
   $('dcb-log-count').textContent = pairs ? `(пар реплик: ${pairs})` : '';
   const log = $('dcb-log');
+  let previousAt = null;
   log.replaceChildren(...session.messages.map((m) => {
     const li = document.createElement('li');
     li.className = `msg msg-${m.speaker === 'bi' ? 'bi' : 'user'}`;
-    li.textContent = `${m.speaker === 'bi' ? 'Би' : 'Си'}: ${m.text}`;
+    const time = document.createElement('span');
+    time.className = 'msg-time';
+    time.textContent = formatReplicaTime(m.at, previousAt);
+    if (m.at) previousAt = m.at;
+    const body = document.createElement('span');
+    body.className = 'msg-body';
+    body.textContent = `${m.speaker === 'bi' ? 'Би' : 'Си'}: ${m.text}`;
+    li.append(time, body);
     return li;
   }));
 

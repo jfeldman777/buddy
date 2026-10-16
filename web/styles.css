@@ -356,6 +356,22 @@ body.chat-open footer {
   gap: 8px;
 }
 
+#dcb-log .msg {
+  flex-direction: column;
+  gap: 4px;
+}
+
+#dcb-log .msg-time {
+  display: block;
+  font-size: 0.8rem;
+  font-variant-numeric: tabular-nums;
+  opacity: 0.75;
+}
+
+#dcb-log .msg-body {
+  display: block;
+}
+
 .msg-bi {
   align-self: flex-start;
   background: var(--paper);
