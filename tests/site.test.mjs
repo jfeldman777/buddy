@@ -47,7 +47,7 @@ test('стартовая страница содержит всё, что тре
 
 test('на стартовой странице есть разговор с Би: выбор голоса, имя, настройки', async () => {
   const html = await read('web/index.html');
-  for (const id of ['chat', 'chat-log', 'chat-voices', 'chat-text-mode', 'chat-name-form', 'chat-name', 'chat-change-voice', 'chat-change-name', 'chat-forget', 'welcome-back', 'chat-voice-help', 'chat-voice-recheck', 'chat-rating', 'chat-journal']) {
+  for (const id of ['chat', 'chat-log', 'chat-voices', 'chat-text-mode', 'chat-name-form', 'chat-name', 'chat-change-voice', 'chat-change-name', 'chat-forget', 'welcome-back', 'chat-voice-help', 'chat-voice-recheck', 'chat-rating', 'chat-journal', 'chat-voice-enabled', 'chat-voice-enabled-talk']) {
     assert.match(html, new RegExp(`id="${id}"`), `нет элемента #${id}`);
   }
   assert.match(html, /Без голоса — только текст/);

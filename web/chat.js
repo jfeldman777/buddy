@@ -40,6 +40,8 @@ export function initChat({ onProfileChange }) {
   const micButton = document.getElementById('chat-mic');
   const micConsent = document.getElementById('chat-mic-consent');
   const micRevoke = document.getElementById('chat-mic-revoke');
+  const voiceEnabledMenu = document.getElementById('chat-voice-enabled');
+  const voiceEnabledTalk = document.getElementById('chat-voice-enabled-talk');
 
   const platform = detectPlatform();
   const helpPlatform = platform === 'desktop' ? (/Macintosh/.test(navigator.userAgent) ? 'mac' : 'windows') : platform;
@@ -257,7 +259,7 @@ export function initChat({ onProfileChange }) {
       replay.className = 'msg-replay';
       replay.textContent = '🔊';
       replay.setAttribute('aria-label', 'Повторить вслух');
-      replay.hidden = mode !== 'voice';
+      replay.hidden = !voiceOn();
       replay.addEventListener('click', () => speak(text, currentVoice));
       item.append(replay);
     }
@@ -266,7 +268,56 @@ export function initChat({ onProfileChange }) {
   }
 
   function refreshReplayButtons() {
-    for (const button of log.querySelectorAll('.msg-replay')) button.hidden = mode !== 'voice';
+    const on = voiceOn();
+    for (const button of log.querySelectorAll('.msg-replay')) button.hidden = !on;
+  }
+
+  function voiceOn() {
+    return Boolean(profile?.voiceEnabled !== false && mode === 'voice' && currentVoice);
+  }
+
+  function syncVoiceToggles() {
+    const on = voiceOn();
+    if (voiceEnabledMenu) voiceEnabledMenu.checked = on;
+    if (voiceEnabledTalk) voiceEnabledTalk.checked = on;
+    const canVoice = speechSupported() && Boolean(currentVoice || profile?.voice || voices.length);
+    if (voiceEnabledMenu) voiceEnabledMenu.disabled = !canVoice && !on;
+    if (voiceEnabledTalk) voiceEnabledTalk.disabled = !canVoice && !on;
+    refreshReplayButtons();
+  }
+
+  async function setVoiceEnabled(enabled) {
+    if (enabled) {
+      if (!speechSupported()) {
+        syncVoiceToggles();
+        await biSay(['На этом устройстве нет озвучки — остаюсь в тексте.']);
+        return;
+      }
+      if (!currentVoice) {
+        voices = pickVoices(await loadVoices());
+        currentVoice = findVoice(voices, profile?.voice) || voices[0] || null;
+      }
+      if (!currentVoice) {
+        await updateProfile({ voiceEnabled: false });
+        syncVoiceToggles();
+        await biSay([prompts.noVoicesHere]);
+        showVoiceHelpIfNeeded();
+        return;
+      }
+      mode = 'voice';
+      unlockSpeech();
+      await updateProfile({
+        voiceEnabled: true,
+        mode: 'voice',
+        voice: profile?.voice ?? { uri: currentVoice.voiceURI, name: currentVoice.name, lang: currentVoice.lang },
+        voiceDeclined: false,
+      });
+      syncVoiceToggles();
+      return;
+    }
+    stopSpeaking();
+    await updateProfile({ voiceEnabled: false });
+    syncVoiceToggles();
   }
 
   // Returns the program fact about speech, or null when Bi only wrote.
@@ -275,7 +326,7 @@ export function initChat({ onProfileChange }) {
       appendMessage('bi', text);
       await storage.addMessage('bi', text);
     }
-    if (mode !== 'voice' || !currentVoice) return null;
+    if (!voiceOn()) return null;
     speak(messages.join(' '), currentVoice);
     return { type: 'speech_requested', voice: currentVoice.name };
   }
@@ -316,8 +367,13 @@ export function initChat({ onProfileChange }) {
   async function chooseVoice(voice) {
     mode = 'voice';
     currentVoice = voice;
-    refreshReplayButtons();
-    await updateProfile({ mode: 'voice', voice: { uri: voice.voiceURI, name: voice.name, lang: voice.lang }, voiceDeclined: false });
+    await updateProfile({
+      mode: 'voice',
+      voiceEnabled: true,
+      voice: { uri: voice.voiceURI, name: voice.name, lang: voice.lang },
+      voiceDeclined: false,
+    });
+    syncVoiceToggles();
     await userSay(`Голос: ${voice.name}`);
     const reply = afterVoiceChoice({ profile, mode });
     const speech = await biSay(reply.messages);
@@ -331,8 +387,8 @@ export function initChat({ onProfileChange }) {
     stopSpeaking();
     mode = 'text';
     currentVoice = null;
-    refreshReplayButtons();
-    await updateProfile({ mode: 'text', voice: null, voiceDeclined: true });
+    await updateProfile({ mode: 'text', voice: null, voiceDeclined: true, voiceEnabled: false });
+    syncVoiceToggles();
     await userSay('Без голоса, только текст');
     const reply = afterVoiceChoice({ profile, mode });
     await biSay(reply.messages);
@@ -507,6 +563,12 @@ export function initChat({ onProfileChange }) {
     const result = opening({ profile, speechSupported: supported, voices });
     mode = result.mode;
     currentVoice = mode === 'voice' ? findVoice(voices, profile?.voice) : null;
+    if (profile?.voiceEnabled === false) {
+      /* keep mode/voice for quick re-enable via checkbox */
+    } else if (mode === 'voice' && currentVoice && profile?.voiceEnabled === undefined) {
+      await updateProfile({ voiceEnabled: true });
+    }
+    syncVoiceToggles();
 
     const messages = [...result.messages];
     if (!storage.persistent) messages.push('Похоже, браузер не даёт мне ничего запоминать — например, в приватном режиме. В следующий раз я тебя не узнаю.');
@@ -610,6 +672,15 @@ export function initChat({ onProfileChange }) {
     show(false);
     if (location.hash === '#bi') history.replaceState(null, '', location.pathname + location.search);
   }
+
+  function onVoiceToggle(event) {
+    const enabled = event.target.checked;
+    if (voiceEnabledMenu) voiceEnabledMenu.checked = enabled;
+    if (voiceEnabledTalk) voiceEnabledTalk.checked = enabled;
+    setVoiceEnabled(enabled).catch((error) => console.warn(error));
+  }
+  voiceEnabledMenu?.addEventListener('change', onVoiceToggle);
+  voiceEnabledTalk?.addEventListener('change', onVoiceToggle);
 
   textModeButton.addEventListener('click', chooseTextMode);
   document.getElementById('chat-voice-recheck').addEventListener('click', recheckVoices);
