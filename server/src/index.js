@@ -1,5 +1,5 @@
-// Buddy API: Cloudflare Worker + D1. Stage 4 — accounts, passkeys, recovery codes, administrator role.
-// The server never receives conversations, names or the journal of Bi's acts.
+// Buddy API: Cloudflare Worker + D1. Auth + DCB + Buddy-011 memory (structured, with consent).
+// Local journal and display name stay on the device. Structured memory / chat context need consent.
 import { HttpError, json, readJson, corsHeaders, clientIp, now } from './http.js';
 import { createSession, authenticate, requireAdmin } from './sessions.js';
 import { generateRecoveryCode, formatRecoveryCode, normalizeRecoveryCode, recoveryHmac } from './recovery.js';
@@ -12,6 +12,7 @@ import {
 } from './passkeys.js';
 import { timingSafeEqual } from './crypto.js';
 import { handleDcb } from './dcb/routes.js';
+import { handleBi } from './bi/routes.js';
 
 const iso = (env) => new Date(now(env)).toISOString();
 
@@ -223,6 +224,7 @@ export default {
       try {
         if (handler) response = await handler(request, env);
         else if (path.startsWith('/dcb')) response = await handleDcb(request, env);
+        else if (path.startsWith('/chat')) response = await handleBi(request, env);
         else response = json({ error: 'not_found', message: 'Нет такого адреса.' }, 404);
       } catch (error) {
         if (error instanceof HttpError) {

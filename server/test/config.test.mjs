@@ -13,6 +13,7 @@ test('wrangler.toml: привязки D1, лимитов и cron объявле�
   assert.match(toml, /crons = \[/);
   assert.match(toml, /^RP_ID = "jfeldman777\.github\.io"$/m);
   assert.match(toml, /^ALLOWED_ORIGINS = "https:\/\/jfeldman777\.github\.io"$/m, 'только сайт Buddy, без слеша и пути');
+  assert.match(toml, /^CHAT_BUDGET_MICROS = "1000000"$/m, 'бюджет А–Би $1 отдельно от DCB');
   assert.doesNotMatch(toml, /^\s*(RECOVERY_PEPPER|TURNSTILE_SECRET)\s*=/m, 'секреты задаются через wrangler secret put');
   const example = await read('.dev.vars.example');
   for (const name of ['RECOVERY_PEPPER', 'TURNSTILE_SECRET', 'RP_ID', 'ALLOWED_ORIGINS']) assert.match(example, new RegExp(`^${name}=`, 'm'));

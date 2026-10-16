@@ -439,6 +439,24 @@ body.chat-open footer {
   margin-top: 10px;
 }
 
+.chat-talk-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.5rem;
+  align-items: center;
+  margin-top: 0.5rem;
+}
+
+.chat-form textarea {
+  width: 100%;
+  min-height: 3.5rem;
+  resize: vertical;
+  font: inherit;
+  padding: 0.5rem 0.75rem;
+  border: 1px solid var(--border, #ccc);
+  border-radius: 0.35rem;
+}
+
 .chat-form {
   display: flex;
   gap: 8px;

@@ -86,10 +86,12 @@ test('D2: на сервер Buddy ходит только api.js, остальн
 });
 
 test('D2: разговоры, имя и журнал не попадают в модули, которые ходят на сервер', async () => {
+  // chat.js may use api/account after Buddy-011 consent; other local modules stay offline.
   const network = /from '\.\/(api|account|turnstile|config)\.js'/;
-  for (const file of ['app.js', 'chat.js', 'dialogue.js', 'speech.js', 'listen.js', 'storage.js', 'journal.js', 'journal-page.js', 'declarations.js', 'pwa.js']) {
+  for (const file of ['app.js', 'dialogue.js', 'speech.js', 'listen.js', 'storage.js', 'journal.js', 'journal-page.js', 'declarations.js', 'pwa.js', 'photo.js']) {
     assert.doesNotMatch(await read(`web/${file}`), network, `${file} подключает сетевой модуль`);
   }
+  assert.match(await read('web/chat.js'), /from '\.\/(api|account)\.js'/, 'чат А–Би ходит на сервер через api/account после согласия');
   for (const file of ['api.js', 'account.js', 'account-page.js', 'admin-page.js', 'dcb-page.js', 'turnstile.js']) {
     const text = await read(`web/${file}`);
     assert.doesNotMatch(text, /getProfile|saveProfile|recentMessages|addMessage|readJournal|addJournalEntry/, `${file} читает личные данные`);
@@ -121,15 +123,18 @@ test('страница учётной записи: passkey, код восста
   assert.match(admin, /только по passkey/);
 });
 
-test('D1: к микрофону обращается только listen.js, камера не используется', async () => {
+test('D1: к микрофону обращается только listen.js; камера — через input capture с разрешением', async () => {
   for (const file of (await readdir(WEB)).filter((f) => f.endsWith('.js') || f.endsWith('.html'))) {
     const text = await read(`web/${file}`);
-    assert.doesNotMatch(text, /getUserMedia|mediaDevices/, `${file} обращается к микрофону или камере напрямую`);
+    assert.doesNotMatch(text, /getUserMedia|mediaDevices/, `${file} не должен вызывать getUserMedia`);
     if (file !== 'listen.js') assert.doesNotMatch(text, /SpeechRecognition/, `${file} обращается к распознаванию речи в обход listen.js`);
     if (!['listen.js', 'chat.js'].includes(file)) assert.doesNotMatch(text, /listenOnce/, `${file} включает микрофон`);
   }
   const listen = await read('web/listen.js');
   assert.match(listen, /continuous = false/, 'микрофон слушает только одну фразу');
+  const chat = await read('web/chat.js');
+  assert.match(chat, /cameraPermission|permissions\?\.camera/, 'камера только после сохранённого разрешения');
+  assert.match(await read('web/index.html'), /capture="environment"/, 'снимок через input capture');
 });
 
 test('D1: chat.js включает микрофон только после проверки сохранённого разрешения', async () => {

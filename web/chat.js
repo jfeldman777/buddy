@@ -4,6 +4,9 @@ import { buildEntry, normalizeRating, answerLabels, RATING_QUESTION } from './jo
 import { openStorage } from './storage.js';
 import { speechSupported, loadVoices, unlockSpeech, speak, stopSpeaking } from './speech.js';
 import { detectPlatform } from './pwa.js';
+import { api, ApiError } from './api.js';
+import { currentUser } from './account.js';
+import { fileToPhotoDataUrl } from './photo.js';
 
 const HISTORY_LIMIT = 20;
 
@@ -16,6 +19,21 @@ export function initChat({ onProfileChange }) {
   const nameForm = document.getElementById('chat-name-form');
   const nameInput = document.getElementById('chat-name');
   const idleNote = document.getElementById('chat-idle');
+  const talkForm = document.getElementById('chat-talk-form');
+  const talkInput = document.getElementById('chat-talk-input');
+  const talkStatus = document.getElementById('chat-talk-status');
+  const authNeeded = document.getElementById('chat-auth-needed');
+  const consentPanel = document.getElementById('chat-consent-panel');
+  const consentText = document.getElementById('chat-consent-text');
+  const consentAccept = document.getElementById('chat-consent-accept');
+  const startAi = document.getElementById('chat-start-ai');
+  const budgetNote = document.getElementById('chat-budget-note');
+  const photoFile = document.getElementById('chat-photo-file');
+  const photoCamera = document.getElementById('chat-photo-camera');
+  const photoPreviewWrap = document.getElementById('chat-photo-preview-wrap');
+  const photoPreview = document.getElementById('chat-photo-preview');
+  const photoClear = document.getElementById('chat-photo-clear');
+  const cameraConsent = document.getElementById('chat-camera-consent');
   const menu = document.getElementById('chat-menu');
   const voiceHelp = document.getElementById('chat-voice-help');
   const ratingPanel = document.getElementById('chat-rating');
@@ -37,6 +55,9 @@ export function initChat({ onProfileChange }) {
   let ratingEventId = null;
   let listening = null;
   let micPermissionNow = null;
+  let auth = null;
+  let pendingPhoto = null;
+  let talking = false;
 
   function showVoiceHelpIfNeeded() {
     voiceHelp.hidden = !(speechSupported() && voices.length === 0);
@@ -59,12 +80,169 @@ export function initChat({ onProfileChange }) {
     nameForm.hidden = step !== 'askName';
     ratingPanel.hidden = step !== 'rate';
     micConsent.hidden = true;
+    cameraConsent.hidden = true;
     idleNote.hidden = step !== 'idle';
+    talkForm.hidden = step !== 'talk';
     if (step === 'chooseVoice') renderVoices();
     if (step === 'askName') {
       nameInput.value = '';
       nameInput.focus();
     }
+    if (step === 'idle') void prepareAiGate();
+    if (step === 'talk') talkInput.focus();
+  }
+
+  function setTalkStatus(text) {
+    talkStatus.textContent = text || '';
+    talkStatus.hidden = !text;
+  }
+
+  function setPhotoPreview(dataUrl) {
+    pendingPhoto = dataUrl || null;
+    if (dataUrl) {
+      photoPreview.src = dataUrl;
+      photoPreviewWrap.hidden = false;
+      photoClear.hidden = false;
+    } else {
+      photoPreview.removeAttribute('src');
+      photoPreviewWrap.hidden = true;
+      photoClear.hidden = true;
+      photoFile.value = '';
+      photoCamera.value = '';
+    }
+  }
+
+  async function prepareAiGate() {
+    startAi.hidden = true;
+    consentPanel.hidden = true;
+    authNeeded.hidden = true;
+    budgetNote.hidden = true;
+    if (!api.configured) {
+      authNeeded.hidden = false;
+      authNeeded.textContent = 'Сервер Buddy не подключён — разговор с ИИ недоступен.';
+      return;
+    }
+    try {
+      auth = await currentUser(storage);
+    } catch {
+      auth = null;
+    }
+    if (!auth) {
+      authNeeded.hidden = false;
+      return;
+    }
+    try {
+      const { consent } = await api.chatConsent(auth.token);
+      if (!consent.given) {
+        consentText.textContent = consent.text;
+        consentPanel.hidden = false;
+        return;
+      }
+      const { budget } = await api.chatBudget(auth.token);
+      budgetNote.textContent = `Бюджет общения с Би: осталось $${budget.remainingUsd.toFixed(4)} из $${budget.grantedUsd.toFixed(2)}.`;
+      budgetNote.hidden = false;
+      startAi.hidden = false;
+    } catch (error) {
+      authNeeded.hidden = false;
+      authNeeded.textContent = error.message || 'Не удалось проверить согласие.';
+    }
+  }
+
+  async function acceptConsent() {
+    if (!auth) return;
+    await api.chatGiveConsent(auth.token, { accept: true });
+    await record('memory_consent', {}, [{ type: 'data_sent', what: 'согласие на память Би', consent: true }], 'Согласие сохранено.');
+    await prepareAiGate();
+  }
+
+  async function beginAiTalk() {
+    if (!auth || talking) return;
+    talking = true;
+    setTalkStatus('Би думает…');
+    setStep('talk');
+    try {
+      const ctx = await api.chatContext(auth.token);
+      if (ctx.context?.summary) {
+        appendMessage('bi', `(Контекст с сервера) ${ctx.context.summary}`, { earlier: true });
+      }
+      const data = await api.chatTurn(auth.token, { open: true, displayName: profile?.name || '' });
+      await biSay([data.reply]);
+      await record('chat_turn', {}, [{ type: 'data_sent', what: 'реплика и контекст Би', consent: true }], 'Ход Би получен.');
+      budgetNote.textContent = `Бюджет общения с Би: осталось $${data.budget.remainingUsd.toFixed(4)} из $${data.budget.grantedUsd.toFixed(2)}.`;
+      setTalkStatus('');
+    } catch (error) {
+      setTalkStatus(error.message || 'Ошибка.');
+      if (error instanceof ApiError && error.code === 'consent_required') setStep('idle');
+    } finally {
+      talking = false;
+    }
+  }
+
+  async function submitTalk(event) {
+    event.preventDefault();
+    if (!auth || talking) return;
+    const text = talkInput.value.trim();
+    if (!text && !pendingPhoto) {
+      setTalkStatus('Напишите сообщение или приложите фото.');
+      return;
+    }
+    talking = true;
+    setTalkStatus('Би думает…');
+    try {
+      if (text) await userSay(text);
+      else await userSay('(фото)');
+      talkInput.value = '';
+      const body = { displayName: profile?.name || '' };
+      if (text) body.text = text;
+      const hadPhoto = Boolean(pendingPhoto);
+      if (pendingPhoto) body.photoData = pendingPhoto;
+      const data = await api.chatTurn(auth.token, body);
+      setPhotoPreview(null);
+      await biSay([data.reply]);
+      await record('chat_turn', {}, [{ type: 'data_sent', what: hadPhoto ? 'текст и фото для Би' : 'реплика для Би', consent: true }], 'Ход Би получен.');
+      setTalkStatus('');
+    } catch (error) {
+      setTalkStatus(error.message || 'Ошибка.');
+    } finally {
+      talking = false;
+    }
+  }
+
+  function cameraPermission() {
+    return profile?.permissions?.camera ?? null;
+  }
+
+  async function onPhotoFromInput(input) {
+    const file = input?.files?.[0];
+    if (!file) return;
+    try {
+      setPhotoPreview(await fileToPhotoDataUrl(file));
+      setTalkStatus('Фото готово — нажмите «Отправить».');
+    } catch (error) {
+      setTalkStatus(error.message || 'Не удалось обработать фото.');
+    }
+  }
+
+  async function onPhotoCamera() {
+    // Camera via file input with capture attribute; ask D1 permission first.
+    const permission = cameraPermission();
+    if (!permission?.granted) {
+      cameraConsent.hidden = false;
+      return;
+    }
+    photoCamera.click();
+  }
+
+  async function allowCamera() {
+    cameraConsent.hidden = true;
+    await updateProfile({ permissions: { ...(profile?.permissions ?? {}), camera: { granted: true, at: new Date().toISOString() } } });
+    await record('camera_allowed', {}, [{ type: 'permission_granted', device: 'camera' }], 'Разрешение камеры сохранено.');
+    photoCamera.click();
+  }
+
+  async function declineCamera() {
+    cameraConsent.hidden = true;
+    await biSay(['Хорошо, можно выбрать фото из файла.']);
   }
 
   function appendMessage(role, text, { earlier = false } = {}) {
@@ -439,6 +617,16 @@ export function initChat({ onProfileChange }) {
   document.getElementById('chat-mic-allow').addEventListener('click', allowMic);
   document.getElementById('chat-mic-decline').addEventListener('click', declineMic);
   micRevoke.addEventListener('click', revokeMic);
+  consentAccept.addEventListener('click', () => acceptConsent().catch((e) => setTalkStatus(e.message)));
+  startAi.addEventListener('click', () => beginAiTalk().catch((e) => setTalkStatus(e.message)));
+  talkForm.addEventListener('submit', submitTalk);
+  document.getElementById('chat-photo-pick').addEventListener('click', () => photoFile.click());
+  document.getElementById('chat-photo-cam').addEventListener('click', () => onPhotoCamera().catch((e) => setTalkStatus(e.message)));
+  photoFile.addEventListener('change', () => onPhotoFromInput(photoFile));
+  photoCamera.addEventListener('change', () => onPhotoFromInput(photoCamera));
+  photoClear.addEventListener('click', () => setPhotoPreview(null));
+  document.getElementById('chat-camera-allow').addEventListener('click', () => allowCamera().catch((e) => setTalkStatus(e.message)));
+  document.getElementById('chat-camera-decline').addEventListener('click', () => declineCamera());
   for (const button of ratingPanel.querySelectorAll('button[data-answer]')) {
     button.addEventListener('click', () => rate(button.dataset.answer));
   }

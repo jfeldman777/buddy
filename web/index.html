@@ -45,7 +45,7 @@
             <a href="account.html" id="chat-login">Войти</a>
             <button type="button" id="chat-forget">Удалить мои данные</button>
             <button type="button" id="chat-check-update" data-check-update>Проверить обновления</button>
-            <p class="chat-menu-version">Buddy Alpha 0.01 · версия <span data-version>013</span></p>
+            <p class="chat-menu-version">Buddy Alpha 0.01 · версия <span data-version>014</span></p>
           </div>
         </details>
       </header>
@@ -105,7 +105,37 @@
         <button type="button" class="btn btn-secondary btn-small" data-answer="no">Нет</button>
         <button type="button" class="btn btn-secondary btn-small" data-answer="unsure">Не знаю</button>
       </div>
-      <p id="chat-idle" class="chat-panel note" hidden>Разговор с Би откроется в следующих версиях. Имя и выбор голоса хранятся только на этом устройстве. Что Би сделал и почему — в <a href="journal.html">журнале поступков Би</a>.</p>
+      <div id="chat-idle" class="chat-panel" hidden>
+        <p class="note">Имя и голос хранятся на этом устройстве. Память Би на сервере — только после согласия. Журнал поступков — в <a href="journal.html">журнале</a>.</p>
+        <p id="chat-auth-needed" class="note" hidden>Чтобы говорить с Би через ИИ, <a href="account.html">войдите</a> в Buddy.</p>
+        <div id="chat-consent-panel" hidden>
+          <p id="chat-consent-text" class="note"></p>
+          <button type="button" class="btn btn-primary" id="chat-consent-accept">Согласен — помнить на сервере</button>
+        </div>
+        <p id="chat-budget-note" class="note" hidden></p>
+        <button type="button" class="btn btn-primary" id="chat-start-ai" hidden>Продолжить разговор с Би</button>
+      </div>
+      <form id="chat-talk-form" class="chat-panel chat-form" hidden>
+        <label for="chat-talk-input" class="visually-hidden">Сообщение Би</label>
+        <textarea id="chat-talk-input" rows="2" maxlength="4000" enterkeyhint="send" placeholder="Напишите Би…"></textarea>
+        <div class="chat-talk-actions">
+          <input type="file" id="chat-photo-file" accept="image/*" hidden>
+          <input type="file" id="chat-photo-camera" accept="image/*" capture="environment" hidden>
+          <button type="button" class="btn btn-secondary btn-small" id="chat-photo-pick">Файл</button>
+          <button type="button" class="btn btn-secondary btn-small" id="chat-photo-cam">Камера</button>
+          <button type="button" class="btn btn-secondary btn-small" id="chat-photo-clear" hidden>Убрать фото</button>
+          <button type="submit" class="btn btn-primary">Отправить</button>
+        </div>
+        <p id="chat-photo-preview-wrap" class="dcb-photo-wrap" hidden>
+          <img id="chat-photo-preview" class="dcb-photo-preview" alt="Превью фото для Би">
+        </p>
+        <p id="chat-talk-status" class="note" role="status" hidden></p>
+      </form>
+      <div id="chat-camera-consent" class="chat-panel rating-buttons" hidden>
+        <p class="note">Би просит доступ к камере, чтобы вы могли показать снимок. Разрешение хранится на этом устройстве.</p>
+        <button type="button" class="btn btn-primary btn-small" id="chat-camera-allow">Разрешить камеру</button>
+        <button type="button" class="btn btn-secondary btn-small" id="chat-camera-decline">Не сейчас</button>
+      </div>
     </section>
 
     <section id="install" class="card">
@@ -171,7 +201,7 @@
     <a href="declarations.html">Декларации Би</a>
     <a href="journal.html">Журнал Би</a>
     <a href="https://github.com/jfeldman777/buddy">Исходный код</a>
-    <span>Alpha 0.01 · версия <span data-version>013</span></span>
+    <span>Alpha 0.01 · версия <span data-version>014</span></span>
     <button type="button" class="link-button" data-check-update>Проверить обновления</button>
   </footer>
 </body>

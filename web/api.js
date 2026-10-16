@@ -1,5 +1,5 @@
-// The only module that talks to the Buddy server. It sends sign-in data only:
-// passkey responses, recovery codes and Turnstile tokens. Names, conversations and the journal never go here.
+// The only module that talks to the Buddy server.
+// Auth: passkey, recovery, Turnstile. Buddy-011: consented chat/memory (never the local journal store).
 import { API_BASE } from './config.js';
 
 export class ApiError extends Error {
@@ -69,6 +69,11 @@ export function createApi(base, fetchImpl = (...args) => fetch(...args)) {
     dcbReview: (token, id, body) => call('POST', `/dcb/sessions/${id}/review`, { token, body }),
     dcbIdeas: (token, id, body) => call('POST', `/dcb/sessions/${id}/ideas`, { token, body }),
     dcbExport: (token, id) => call('GET', `/dcb/sessions/${id}/export`, { token }),
+    chatConsent: (token) => call('GET', '/chat/consent', { token }),
+    chatGiveConsent: (token, body) => call('POST', '/chat/consent', { token, body }),
+    chatBudget: (token) => call('GET', '/chat/budget', { token }),
+    chatContext: (token) => call('GET', '/chat/context', { token }),
+    chatTurn: (token, body) => call('POST', '/chat/turn', { token, body }),
   };
 }
 

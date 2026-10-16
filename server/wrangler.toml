@@ -11,8 +11,10 @@ compatibility_date = "2026-10-01"
 RP_ID = "jfeldman777.github.io"
 RP_NAME = "Buddy"
 ALLOWED_ORIGINS = "https://jfeldman777.github.io"
-# Chat model for DCB. Change if the API key's project has no access to the default.
+# Chat model for DCB and A–Bi. Change if the API key's project has no access to the default.
 OPENAI_MODEL = "gpt-6-luna"
+# A–Bi OpenAI hard cap in micros ($1 = 1000000). Separate from DCB $10 purse.
+CHAT_BUDGET_MICROS = "1000000"
 
 [[d1_databases]]
 binding = "DB"
