@@ -51,8 +51,23 @@ export async function chatJson(env, { sessionId, speaker, system, user }) {
   if (!response.ok) {
     await release(env, reservation.id);
     const errText = await response.text().catch(() => '');
-    console.error('OpenAI error', response.status, errText.slice(0, 300));
-    throw new HttpError(502, 'openai_error', 'Ошибка вызова OpenAI.');
+    console.error('OpenAI error', response.status, errText.slice(0, 500));
+    let code = 'openai_error';
+    let message = 'Ошибка вызова OpenAI.';
+    if (response.status === 401) {
+      code = 'openai_key';
+      message = 'OpenAI отклонил ключ. Проверьте OPENAI_API_KEY в секретах Worker (без кавычек и пробелов) и задайте его снова.';
+    } else if (response.status === 403) {
+      code = 'openai_forbidden';
+      message = 'У этого ключа нет доступа к нужной модели. В проекте OpenAI включите gpt-4o-mini или выберите другой ключ.';
+    } else if (response.status === 429) {
+      code = 'openai_quota';
+      message = 'OpenAI отказал из‑за лимита или исчерпанной квоты. Проверьте оплату и лимиты в кабинете OpenAI.';
+    } else if (response.status >= 500) {
+      code = 'openai_unavailable';
+      message = 'OpenAI временно недоступен. Попробуйте через минуту.';
+    }
+    throw new HttpError(502, code, message);
   }
   const data = await response.json();
   const content = data.choices?.[0]?.message?.content;
