@@ -3,28 +3,42 @@ import { HttpError, now } from '../http.js';
 
 export const DCB_GRANT_MICROS = 10_000_000; // $10
 export const MICROS_PER_DOLLAR = 1_000_000;
+export const DEFAULT_OPENAI_MODEL = 'gpt-4o-mini';
 
-// gpt-4o-mini list prices, micros per 1M tokens (input / output).
-export const PRICE_TABLE = {
-  version: 'openai-gpt-4o-mini-2024-07',
-  model: 'gpt-4o-mini',
-  inputPerMillion: 150_000,
-  outputPerMillion: 600_000,
+// Micros per 1M tokens (input / output). Unknown models use gpt-4o rates so we never under-reserve.
+const MODEL_PRICES = {
+  'gpt-4o-mini': { version: 'openai-gpt-4o-mini', inputPerMillion: 150_000, outputPerMillion: 600_000 },
+  'gpt-4.1-mini': { version: 'openai-gpt-4.1-mini', inputPerMillion: 400_000, outputPerMillion: 1_600_000 },
+  'gpt-4.1-nano': { version: 'openai-gpt-4.1-nano', inputPerMillion: 100_000, outputPerMillion: 400_000 },
+  'gpt-4o': { version: 'openai-gpt-4o', inputPerMillion: 2_500_000, outputPerMillion: 10_000_000 },
+  'gpt-3.5-turbo': { version: 'openai-gpt-3.5-turbo', inputPerMillion: 500_000, outputPerMillion: 1_500_000 },
 };
 
-export function estimateCostMicros({ inputTokens, maxOutputTokens }) {
-  const { inputPerMillion, outputPerMillion } = PRICE_TABLE;
+const FALLBACK_PRICE = { version: 'openai-unknown-as-gpt-4o', inputPerMillion: 2_500_000, outputPerMillion: 10_000_000 };
+
+// Kept for tests that import the default table.
+export const PRICE_TABLE = { model: DEFAULT_OPENAI_MODEL, ...MODEL_PRICES[DEFAULT_OPENAI_MODEL] };
+
+export function resolvePriceTable(env = {}) {
+  const model = String(env.OPENAI_MODEL || DEFAULT_OPENAI_MODEL).trim() || DEFAULT_OPENAI_MODEL;
+  const known = MODEL_PRICES[model];
+  return known ? { model, ...known } : { model, ...FALLBACK_PRICE };
+}
+
+export function estimateCostMicros({ inputTokens, maxOutputTokens }, prices = PRICE_TABLE) {
+  const { inputPerMillion, outputPerMillion } = prices;
   return Math.ceil((inputTokens * inputPerMillion + maxOutputTokens * outputPerMillion) / 1_000_000);
 }
 
-export function actualCostMicros({ inputTokens, outputTokens }) {
-  const { inputPerMillion, outputPerMillion } = PRICE_TABLE;
+export function actualCostMicros({ inputTokens, outputTokens }, prices = PRICE_TABLE) {
+  const { inputPerMillion, outputPerMillion } = prices;
   return Math.ceil((inputTokens * inputPerMillion + outputTokens * outputPerMillion) / 1_000_000);
 }
 
 export async function budgetView(env) {
   const row = await env.DB.prepare('SELECT granted_micros, spent_micros, reserved_micros FROM dcb_budget WHERE id = 1').first();
   const remaining = row.granted_micros - row.spent_micros - row.reserved_micros;
+  const prices = resolvePriceTable(env);
   return {
     grantedMicros: row.granted_micros,
     spentMicros: row.spent_micros,
@@ -33,6 +47,7 @@ export async function budgetView(env) {
     grantedUsd: row.granted_micros / MICROS_PER_DOLLAR,
     spentUsd: row.spent_micros / MICROS_PER_DOLLAR,
     remainingUsd: remaining / MICROS_PER_DOLLAR,
+    model: prices.model,
   };
 }
 

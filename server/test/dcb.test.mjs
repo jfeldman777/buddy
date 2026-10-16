@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 import { createEnv, registerWithPasskey, loginWithPasskey } from './harness.mjs';
 import { createAuthenticator } from './authenticator.mjs';
 import { buildBiPrompt, buildSiPrompt } from '../src/dcb/prompts.js';
-import { estimateCostMicros, actualCostMicros, DCB_GRANT_MICROS } from '../src/dcb/budget.js';
+import { estimateCostMicros, actualCostMicros, DCB_GRANT_MICROS, resolvePriceTable } from '../src/dcb/budget.js';
 import { readFile } from 'node:fs/promises';
 
 // Plain marker for isolation tests — must not look like an API key (gitleaks).
@@ -62,6 +62,37 @@ test('бюджет: оценка стоимости и жёсткий потол
   assert.ok(est > 0);
   const act = actualCostMicros({ inputTokens: 1000, outputTokens: 100 });
   assert.ok(act > 0 && act <= est);
+  assert.equal(resolvePriceTable({}).model, 'gpt-4o-mini');
+  assert.equal(resolvePriceTable({ OPENAI_MODEL: 'gpt-4.1-mini' }).model, 'gpt-4.1-mini');
+});
+
+test('OpenAI: нет доступа к модели — понятное сообщение с именем модели', async () => {
+  const api = await createEnv();
+  const { token } = await asAdmin(api);
+  const persona = await api.call('POST', '/dcb/personas', {
+    token,
+    body: { title: 'Си', secretBio: 'Факт.' },
+  });
+  const session = await api.call('POST', '/dcb/sessions', {
+    token,
+    body: { personaId: persona.data.persona.id, mode: 'small' },
+  });
+  api.env.OPENAI_API_KEY = 'test-openai-placeholder';
+  api.env.OPENAI_MODEL = 'gpt-4o-mini';
+  const realFetch = api.env.FETCH;
+  api.env.FETCH = async (url, init) => {
+    if (String(url).includes('openai.com')) {
+      return new Response(JSON.stringify({
+        error: { message: 'The model `gpt-4o-mini` does not exist or you do not have access to it.', code: 'model_not_found' },
+      }), { status: 404 });
+    }
+    return realFetch(url, init);
+  };
+  const bi = await api.call('POST', `/dcb/sessions/${session.data.session.id}/bi`, { token, body: {} });
+  assert.equal(bi.status, 502);
+  assert.equal(bi.data.error, 'openai_forbidden');
+  assert.match(bi.data.message, /gpt-4o-mini/);
+  assert.match(bi.data.message, /OPENAI_MODEL/);
 });
 
 test('схема DCB отделена от личных диалогов Buddy; есть бюджет и secret_bio', async () => {

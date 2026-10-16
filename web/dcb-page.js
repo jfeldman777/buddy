@@ -35,7 +35,8 @@ async function act(action) {
 }
 
 function renderBudget(budget) {
-  $('dcb-budget').textContent = `Бюджет DCB: осталось $${dollars(budget.remainingMicros)} из $${dollars(budget.grantedMicros)} (потрачено $${dollars(budget.spentMicros)}).`;
+  const model = budget.model ? ` · модель ${budget.model}` : '';
+  $('dcb-budget').textContent = `Бюджет DCB: осталось $${dollars(budget.remainingMicros)} из $${dollars(budget.grantedMicros)} (потрачено $${dollars(budget.spentMicros)})${model}.`;
 }
 
 function renderPersonas() {
