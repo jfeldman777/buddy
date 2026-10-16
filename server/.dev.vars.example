@@ -5,4 +5,5 @@ RECOVERY_PEPPER="<любая длинная случайная строка дл
 # Cloudflare's public test secret: Turnstile always passes. Never use it in production.
 TURNSTILE_SECRET="<тестовый секрет Turnstile из документации Cloudflare>"
 # OpenAI — только для DCB и будущего Buddy. Никогда не коммитить настоящее значение.
-OPENAI_API_KEY="<ключ OpenAI>"
+# Подставьте ключ локально в server/.dev.vars (этот файл-пример ключ не содержит).
+# OPENAI_API_KEY=

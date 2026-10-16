@@ -1,0 +1,9 @@
+# Allowlist for known false positives. Real secrets must never be committed.
+title = "buddy"
+
+[[allowlists]]
+description = "DCB isolation test marker (old and new forms); not a real credential"
+regexes = [
+  '''SECRET_MARKER_XYZ_ISOLATION_77''',
+  '''hidden-bio-marker-for-isolation-test''',
+]

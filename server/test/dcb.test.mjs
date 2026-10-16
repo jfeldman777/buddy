@@ -6,7 +6,8 @@ import { buildBiPrompt, buildSiPrompt } from '../src/dcb/prompts.js';
 import { estimateCostMicros, actualCostMicros, DCB_GRANT_MICROS } from '../src/dcb/budget.js';
 import { readFile } from 'node:fs/promises';
 
-const SECRET_MARKER = 'SECRET_MARKER_XYZ_ISOLATION_77';
+// Plain marker for isolation tests — must not look like an API key (gitleaks).
+const SECRET_MARKER = 'hidden-bio-marker-for-isolation-test';
 
 async function asAdmin(api) {
   const passkey = await createAuthenticator();
@@ -21,7 +22,7 @@ async function asAdmin(api) {
 function mockOpenAi(api, handler) {
   const calls = [];
   const realFetch = api.env.FETCH;
-  api.env.OPENAI_API_KEY = 'test-openai-key-not-secret';
+  api.env.OPENAI_API_KEY = 'test-openai-placeholder';
   api.env.FETCH = async (url, init) => {
     if (String(url).includes('openai.com')) {
       const body = JSON.parse(init.body);
