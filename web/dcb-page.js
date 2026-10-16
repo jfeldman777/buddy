@@ -12,6 +12,7 @@ const storage = await openStorage();
 let auth = null;
 let personas = [];
 let current = null;
+const SEGMENT_PAIRS = 15;
 
 function showStatus(text) {
   status.textContent = text;
@@ -107,13 +108,17 @@ function showSession(session) {
   const mode = session.mode === 'large' ? 'большой' : 'малый';
   const statusLabel = { running: 'идёт', paused: 'пауза', finished: 'завершён' }[session.status] ?? session.status;
   $('dcb-session-meta').textContent = `${session.personaTitle} · режим ${mode} · ${statusLabel} · вопросов Би: ${session.questionCount} · стратегия ${session.biStrategyVersion}`;
+  const active = session.status === 'running' || session.status === 'paused';
   $('dcb-pause').hidden = session.status !== 'running';
   $('dcb-resume').hidden = session.status !== 'paused';
-  $('dcb-step').hidden = session.status !== 'running';
+  $('dcb-segment').hidden = !active;
+  $('dcb-step').hidden = !active;
   $('dcb-promote').hidden = session.mode === 'large' || session.status === 'finished';
   $('dcb-finish').hidden = session.status === 'finished';
   $('dcb-secret').textContent = session.secretBio ?? '';
 
+  const pairs = session.messages.filter((m) => m.speaker === 'bi').length;
+  $('dcb-log-count').textContent = pairs ? `(пар реплик: ${pairs})` : '';
   const log = $('dcb-log');
   log.replaceChildren(...session.messages.map((m) => {
     const li = document.createElement('li');
@@ -213,6 +218,32 @@ $('dcb-persona-reset').addEventListener('click', () => {
   $('dcb-persona-reset').hidden = true;
 });
 
+async function onePair() {
+  showStatus('Би думает…');
+  const bi = await api.dcbBi(auth.token, current.id);
+  showSession(bi.session);
+  showStatus('Си отвечает…');
+  const si = await api.dcbSi(auth.token, current.id);
+  showSession(si.session);
+  return si;
+}
+
+// Runs SEGMENT_PAIRS exchanges, then pauses so Di can read the dialogue.
+async function runSegment({ resumeIfPaused = true } = {}) {
+  if (!current) return;
+  if (current.status === 'paused' && resumeIfPaused) {
+    showSession((await api.dcbResume(auth.token, current.id)).session);
+  }
+  if (current.status !== 'running') throw new Error('Сеанс не идёт. Продолжите или начните новый.');
+  for (let i = 1; i <= SEGMENT_PAIRS; i++) {
+    showStatus(`Отрезок: пара ${i} из ${SEGMENT_PAIRS}…`);
+    await onePair();
+  }
+  showSession((await api.dcbPause(auth.token, current.id)).session);
+  $('dcb-log').scrollIntoView({ block: 'start', behavior: 'smooth' });
+  showStatus(`Отрезок из ${SEGMENT_PAIRS} пар закончен. Ниже — диалог. Можно запустить ещё ${SEGMENT_PAIRS} пар или завершить сеанс.`);
+}
+
 $('dcb-start-form').addEventListener('submit', (event) => {
   event.preventDefault();
   act(async () => {
@@ -222,19 +253,23 @@ $('dcb-start-form').addEventListener('submit', (event) => {
     });
     showSession(session);
     await refreshSessions();
-    showStatus('Сеанс начат. Нажмите «Ход Би → ответ Си».');
+    await runSegment({ resumeIfPaused: false });
+    await refreshSessions();
   });
 });
 
+$('dcb-segment').addEventListener('click', () => act(async () => {
+  await runSegment();
+  await refreshSessions();
+}));
+
 $('dcb-step').addEventListener('click', () => act(async () => {
   if (!current) return;
-  showStatus('Би думает…');
-  const bi = await api.dcbBi(auth.token, current.id);
-  showSession(bi.session);
-  showStatus('Си отвечает…');
-  const si = await api.dcbSi(auth.token, current.id);
-  showSession(si.session);
-  showStatus(si.savedFacts?.length ? `Ход сделан. Новых фактов Си: ${si.savedFacts.length}.` : 'Ход сделан.');
+  if (current.status === 'paused') {
+    showSession((await api.dcbResume(auth.token, current.id)).session);
+  }
+  const si = await onePair();
+  showStatus(si.savedFacts?.length ? `Одна пара сделана. Новых фактов Си: ${si.savedFacts.length}.` : 'Одна пара сделана.');
 }));
 
 $('dcb-pause').addEventListener('click', () => act(async () => {

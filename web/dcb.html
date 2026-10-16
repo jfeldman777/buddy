@@ -56,13 +56,15 @@
             <option value="small">Малый — Си не выдумывает</option>
             <option value="large">Большой — Си может достраивать биографию</option>
           </select>
-          <button type="submit" class="btn btn-primary">Начать сеанс</button>
+          <p class="note">После старта Би и Си сделают <strong>15 пар</strong> реплик (вопрос Би + ответ Си), затем остановятся — вы просмотрите диалог. Дальше можно запустить ещё 15 пар или завершить сеанс.</p>
+          <button type="submit" class="btn btn-primary">Начать испытание (15 пар)</button>
         </form>
 
         <div id="dcb-session" hidden>
           <p id="dcb-session-meta" class="note"></p>
           <div class="account-actions">
-            <button type="button" class="btn btn-primary btn-small" id="dcb-step">Ход Би → ответ Си</button>
+            <button type="button" class="btn btn-primary btn-small" id="dcb-segment">Ещё 15 пар</button>
+            <button type="button" class="btn btn-secondary btn-small" id="dcb-step">Одна пара</button>
             <button type="button" class="btn btn-secondary btn-small" id="dcb-pause">Пауза</button>
             <button type="button" class="btn btn-secondary btn-small" id="dcb-resume" hidden>Продолжить</button>
             <button type="button" class="btn btn-secondary btn-small" id="dcb-promote">В большой режим</button>
@@ -70,7 +72,7 @@
           </div>
           <div class="dcb-columns">
             <div>
-              <h3>Диалог</h3>
+              <h3>Диалог <span id="dcb-log-count" class="note"></span></h3>
               <ol id="dcb-log" class="chat-log"></ol>
             </div>
             <div>
@@ -139,7 +141,7 @@
     <a href="./">Buddy</a>
     <a href="admin.html">Администратор</a>
     <a href="https://github.com/jfeldman777/buddy">Исходный код</a>
-    <span>Alpha 0.01 · версия <span data-version>009</span></span>
+    <span>Alpha 0.01 · версия <span data-version>010</span></span>
     <button type="button" class="link-button" data-check-update>Проверить обновления</button>
   </footer>
 </body>
