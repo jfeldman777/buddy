@@ -134,17 +134,36 @@ async function refreshPersonas() {
 async function refreshSessions() {
   const { sessions } = await api.dcbSessions(auth.token);
   const list = $('dcb-session-list');
+  const statusRu = { running: 'идёт', paused: 'пауза', finished: 'завершён' };
   list.replaceChildren(...sessions.map((s) => {
     const li = document.createElement('li');
     const btn = document.createElement('button');
     btn.type = 'button';
     btn.className = 'link-button';
-    btn.textContent = `${s.personaTitle} · ${s.mode === 'large' ? 'большой' : 'малый'} · ${s.status} · ${new Date(s.startedAt).toLocaleString('ru-RU')}`;
+    const q = Number(s.questionCount ?? 0);
+    const st = statusRu[s.status] ?? s.status;
+    btn.textContent = `${s.personaTitle} · ${s.mode === 'large' ? 'большой' : 'малый'} · ${st} · вопросов: ${q} · ${new Date(s.startedAt).toLocaleString('ru-RU')}`;
     btn.addEventListener('click', () => act(async () => {
       const { session } = await api.dcbGetSession(auth.token, s.id);
       showSession(session);
     }));
-    li.append(btn);
+    const del = document.createElement('button');
+    del.type = 'button';
+    del.className = 'btn btn-secondary btn-small';
+    del.textContent = 'Удалить';
+    del.addEventListener('click', () => act(async () => {
+      if (!window.confirm(`Удалить сеанс «${s.personaTitle}» (${q} вопросов)? Протокол исчезнет.`)) return;
+      await api.dcbDeleteSession(auth.token, s.id);
+      if (current?.id === s.id) {
+        current = null;
+        $('dcb-session').hidden = true;
+        $('dcb-review-section').hidden = true;
+        $('dcb-ideas-section').hidden = true;
+      }
+      await refreshSessions();
+      showStatus('Сеанс удалён.');
+    }));
+    li.append(btn, ' ', del);
     return li;
   }));
 }

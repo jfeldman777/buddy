@@ -58,6 +58,7 @@ export function createApi(base, fetchImpl = (...args) => fetch(...args)) {
     dcbSessions: (token) => call('GET', '/dcb/sessions', { token }),
     dcbCreateSession: (token, body) => call('POST', '/dcb/sessions', { token, body }),
     dcbGetSession: (token, id) => call('GET', `/dcb/sessions/${id}`, { token }),
+    dcbDeleteSession: (token, id) => call('DELETE', `/dcb/sessions/${id}`, { token }),
     dcbPause: (token, id) => call('POST', `/dcb/sessions/${id}/pause`, { token, body: {} }),
     dcbResume: (token, id) => call('POST', `/dcb/sessions/${id}/resume`, { token, body: {} }),
     dcbFinish: (token, id) => call('POST', `/dcb/sessions/${id}/finish`, { token, body: {} }),

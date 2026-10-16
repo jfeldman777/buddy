@@ -244,6 +244,17 @@ async function listSessions(request, env) {
   return json({ sessions: results });
 }
 
+async function deleteSession(request, env, id) {
+  const di = await requireDi(request, env);
+  const loaded = await loadSession(env, id, di.userId);
+  // Child tables cascade; reservations have no FK — clean them explicitly.
+  await env.DB.batch([
+    env.DB.prepare('DELETE FROM dcb_reservations WHERE session_id = ?1').bind(id),
+    env.DB.prepare('DELETE FROM dcb_sessions WHERE id = ?1').bind(id),
+  ]);
+  return json({ deleted: true, id: loaded.id });
+}
+
 async function createSession(request, env) {
   const di = await requireDi(request, env);
   const body = await readJson(request);
@@ -485,6 +496,7 @@ export async function handleDcb(request, env) {
   if (key === 'GET /dcb/sessions') return listSessions(request, env);
   if (key === 'POST /dcb/sessions') return createSession(request, env);
   if ((m = /^GET \/dcb\/sessions\/([^/]+)$/.exec(`${method} ${path}`))) return getSession(request, env, m[1]);
+  if ((m = /^DELETE \/dcb\/sessions\/([^/]+)$/.exec(`${method} ${path}`))) return deleteSession(request, env, m[1]);
   if ((m = /^POST \/dcb\/sessions\/([^/]+)\/pause$/.exec(`${method} ${path}`))) return setStatus(request, env, m[1], 'paused');
   if ((m = /^POST \/dcb\/sessions\/([^/]+)\/resume$/.exec(`${method} ${path}`))) return setStatus(request, env, m[1], 'running');
   if ((m = /^POST \/dcb\/sessions\/([^/]+)\/finish$/.exec(`${method} ${path}`))) return setStatus(request, env, m[1], 'finished');

@@ -244,6 +244,21 @@ test('DCB: только elevated admin; CRUD Си; изоляция маркер
   const exported = await api.call('GET', `/dcb/sessions/${session.data.session.id}/export`, { token });
   assert.equal(exported.data.format, 'buddy-dcb-session');
   assert.match(exported.data.session.secretBio, new RegExp(SECRET_MARKER));
+
+  const listed = await api.call('GET', '/dcb/sessions', { token });
+  assert.equal(listed.status, 200);
+  const row = listed.data.sessions.find((s) => s.id === session.data.session.id);
+  assert.ok(row);
+  assert.equal(typeof row.questionCount, 'number');
+  assert.ok(row.questionCount >= 1);
+
+  const deleted = await api.call('DELETE', `/dcb/sessions/${session.data.session.id}`, { token });
+  assert.equal(deleted.status, 200);
+  assert.equal(deleted.data.deleted, true);
+  const gone = await api.call('GET', `/dcb/sessions/${session.data.session.id}`, { token });
+  assert.equal(gone.status, 404);
+  const listedAfter = await api.call('GET', '/dcb/sessions', { token });
+  assert.equal(listedAfter.data.sessions.some((s) => s.id === session.data.session.id), false);
 });
 
 test('DCB: бюджет не даёт превысить $10', async () => {
