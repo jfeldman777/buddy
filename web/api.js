@@ -49,6 +49,14 @@ export function createApi(base, fetchImpl = (...args) => fetch(...args)) {
     passkeyVerify: (token, challengeId, response) => call('POST', '/me/passkeys/verify', { token, body: { challengeId, response } }),
     newRecoveryCode: (token) => call('POST', '/me/recovery-code', { token, body: {} }),
     adminUsers: (token) => call('GET', '/admin/users', { token }),
+    /** Buddy-018: read a Notion teaching page (admin elevated session). Default = first chapter. */
+    adminNotionPage: (token, { id, url } = {}) => {
+      const q = new URLSearchParams();
+      if (id) q.set('id', id);
+      if (url) q.set('url', url);
+      const qs = q.toString();
+      return call('GET', `/admin/notion/page${qs ? `?${qs}` : ''}`, { token });
+    },
     dcbBudget: (token) => call('GET', '/dcb/budget', { token }),
     dcbPersonas: (token) => call('GET', '/dcb/personas', { token }),
     dcbCreatePersona: (token, body) => call('POST', '/dcb/personas', { token, body }),

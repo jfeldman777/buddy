@@ -5,6 +5,8 @@ compatibility_date = "2026-10-01"
 # Secrets are set with `wrangler secret put` and never stored here:
 #   RECOVERY_PEPPER   — random string for HMAC of recovery codes (openssl rand -hex 32)
 #   TURNSTILE_SECRET  — secret key of the Turnstile widget
+#   OPENAI_API_KEY    — OpenAI for DCB / Buddy chat
+#   NOTION_TOKEN      — Notion Internal Integration secret (Buddy-018 teaching pages)
 # For local development they go to server/.dev.vars (see .dev.vars.example), which is not committed.
 
 [vars]

@@ -9,3 +9,5 @@ TURNSTILE_SECRET="<тестовый секрет Turnstile из документ
 # OPENAI_API_KEY=
 # Необязательно: модель (по умолчанию на сервере gpt-6-luna).
 # OPENAI_MODEL=gpt-6-luna
+# Notion Internal Integration — чтение учебных страниц (Buddy-018). Не коммитить.
+# NOTION_TOKEN=

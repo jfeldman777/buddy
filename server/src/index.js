@@ -13,6 +13,7 @@ import {
 import { timingSafeEqual } from './crypto.js';
 import { handleDcb } from './dcb/routes.js';
 import { handleBi } from './bi/routes.js';
+import { readNotionPage, FIRST_CHAPTER_PAGE_ID } from './notion/readPage.js';
 
 const iso = (env) => new Date(now(env)).toISOString();
 
@@ -200,6 +201,21 @@ const routes = {
     ).all();
     await env.DB.prepare('INSERT INTO admin_audit (admin_id, action, created_at) VALUES (?1, ?2, ?3)').bind(session.userId, 'list_users', iso(env)).run();
     return json({ users: results });
+  },
+
+  // Buddy-018: read one Notion teaching page (admin only). Default = first chapter.
+  'GET /admin/notion/page': async (request, env) => {
+    const session = await requireAdmin(request, env);
+    await rateLimit(env, 'LIMIT_USER', session.userId);
+    const url = new URL(request.url);
+    const rawId = url.searchParams.get('id') || FIRST_CHAPTER_PAGE_ID;
+    const page = await readNotionPage(env, {
+      pageId: rawId,
+      sourceUrl: url.searchParams.get('url') || undefined,
+    });
+    await env.DB.prepare('INSERT INTO admin_audit (admin_id, action, created_at) VALUES (?1, ?2, ?3)')
+      .bind(session.userId, `notion_read:${page.pageId}`, iso(env)).run();
+    return json(page);
   },
 };
 

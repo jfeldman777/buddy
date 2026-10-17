@@ -1,0 +1,143 @@
+{
+  "page": {
+    "object": "page",
+    "id": "3f622db3-cb08-8059-8c37-e17046263550",
+    "properties": {
+      "title": {
+        "id": "title",
+        "type": "title",
+        "title": [
+          {
+            "type": "text",
+            "text": { "content": "1.Картина мира: инженерный подход", "link": null },
+            "plain_text": "1.Картина мира: инженерный подход",
+            "href": null
+          }
+        ]
+      }
+    }
+  },
+  "children": {
+    "3f622db3-cb08-8059-8c37-e17046263550": {
+      "pages": [
+        {
+          "results": [
+            {
+              "object": "block",
+              "id": "aaaa0001-0000-0000-0000-000000000001",
+              "type": "quote",
+              "has_children": false,
+              "quote": {
+                "rich_text": [
+                  {
+                    "type": "text",
+                    "plain_text": "Мир можно понять, если смотреть на него как на систему.",
+                    "href": null
+                  }
+                ]
+              }
+            },
+            {
+              "object": "block",
+              "id": "aaaa0001-0000-0000-0000-000000000002",
+              "type": "paragraph",
+              "has_children": false,
+              "paragraph": {
+                "rich_text": [
+                  { "type": "text", "plain_text": "Инженерный подход начинается с ", "href": null },
+                  {
+                    "type": "text",
+                    "plain_text": "модели",
+                    "href": "https://example.com/model"
+                  },
+                  { "type": "text", "plain_text": ".", "href": null }
+                ]
+              }
+            },
+            {
+              "object": "block",
+              "id": "aaaa0001-0000-0000-0000-000000000003",
+              "type": "heading_2",
+              "has_children": false,
+              "heading_2": {
+                "rich_text": [{ "type": "text", "plain_text": "Шаги", "href": null }]
+              }
+            },
+            {
+              "object": "block",
+              "id": "aaaa0001-0000-0000-0000-000000000004",
+              "type": "bulleted_list_item",
+              "has_children": true,
+              "bulleted_list_item": {
+                "rich_text": [{ "type": "text", "plain_text": "Наблюдение", "href": null }]
+              }
+            },
+            {
+              "object": "block",
+              "id": "aaaa0001-0000-0000-0000-000000000005",
+              "type": "numbered_list_item",
+              "has_children": false,
+              "numbered_list_item": {
+                "rich_text": [{ "type": "text", "plain_text": "Гипотеза", "href": null }]
+              }
+            },
+            {
+              "object": "block",
+              "id": "aaaa0001-0000-0000-0000-000000000006",
+              "type": "numbered_list_item",
+              "has_children": false,
+              "numbered_list_item": {
+                "rich_text": [{ "type": "text", "plain_text": "Проверка", "href": null }]
+              }
+            },
+            {
+              "object": "block",
+              "id": "aaaa0001-0000-0000-0000-000000000007",
+              "type": "unsupported_widget",
+              "has_children": false,
+              "unsupported_widget": {}
+            }
+          ],
+          "has_more": true,
+          "next_cursor": "cursor-page-2"
+        },
+        {
+          "results": [
+            {
+              "object": "block",
+              "id": "aaaa0001-0000-0000-0000-000000000008",
+              "type": "paragraph",
+              "has_children": false,
+              "paragraph": {
+                "rich_text": [
+                  { "type": "text", "plain_text": "Вторая страница пагинации.", "href": null }
+                ]
+              }
+            }
+          ],
+          "has_more": false,
+          "next_cursor": null
+        }
+      ]
+    },
+    "aaaa0001-0000-0000-0000-000000000004": {
+      "pages": [
+        {
+          "results": [
+            {
+              "object": "block",
+              "id": "bbbb0001-0000-0000-0000-000000000001",
+              "type": "bulleted_list_item",
+              "has_children": false,
+              "bulleted_list_item": {
+                "rich_text": [{ "type": "text", "plain_text": "Факты", "href": null }]
+              }
+            }
+          ],
+          "has_more": false,
+          "next_cursor": null
+        }
+      ]
+    }
+  }
+}

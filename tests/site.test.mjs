@@ -249,7 +249,7 @@ test('в репозитории нет секретов и оригиналов 
     /sk-[A-Za-z0-9_-]{20,}/,
     /\b\d{8,10}:[A-Za-z0-9_-]{35}\b/,
     /-----BEGIN [A-Z ]*PRIVATE KEY-----/,
-    /(OPENAI_API_KEY|TELEGRAM_BOT_TOKEN|RECOVERY_PEPPER|TURNSTILE_SECRET)\s*[=:]\s*['"]?(?!test-)[A-Za-z0-9]/,
+    /(OPENAI_API_KEY|TELEGRAM_BOT_TOKEN|RECOVERY_PEPPER|TURNSTILE_SECRET|NOTION_TOKEN)\s*[=:]\s*['"]?(?!test-)[A-Za-z0-9]/,
   ];
   const gitignore = await read('.gitignore');
   assert.match(gitignore, /^\*\.docx$/m);
