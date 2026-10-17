@@ -30,7 +30,16 @@
 
 Код: [`server/src/bi/notionTeach.js`](../server/src/bi/notionTeach.js), вызов из [`server/src/bi/routes.js`](../server/src/bi/routes.js). Стратегия чата: `buddy-abi-v2`.
 
-Ещё нет: отдельный UI обучения, запись главы в долговременную KB/учения, порционная проверка усвоения.
+## Шаг 3. Методист: программа по 13 страницам
+
+- Каталог: [`server/src/notion/tuaiIntroCatalog.js`](../server/src/notion/tuaiIntroCatalog.js) (ровно 13 pageId от Создателя).
+- Чтение корпуса: [`server/src/notion/readCorpus.js`](../server/src/notion/readCorpus.js), `GET /admin/notion/corpus`.
+- Документ: [`docs/curriculum/bi-program-v001.md`](curriculum/bi-program-v001.md) — «Программа обучения Би — версия 001».
+- Обучение Би / экзамены / память — не в этом шаге.
+
+Проверка полноты корпуса (эталон): admin + `GET …/admin/notion/corpus` → `complete: true`, 13× `status: "ok"`.
+
+Ещё нет: автоматическое обучение Би, экзаменатор, запись в KB.
 
 ## Настройка (один раз)
 
