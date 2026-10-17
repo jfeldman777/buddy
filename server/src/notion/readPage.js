@@ -11,6 +11,8 @@ export const FIRST_CHAPTER_SOURCE_URL = 'https://app.notion.com/p/1-3f622db3cb08
 const PAGE_SIZE = 100;
 const MAX_DEPTH = 24;
 const MAX_BLOCKS = 5000;
+/** Extra Notion pages to expand via link_to_page (child_page uses the same block id). */
+const MAX_LINKED_PAGES = 48;
 
 const RICH_TEXT_TYPES = new Set([
   'paragraph', 'heading_1', 'heading_2', 'heading_3',
@@ -147,12 +149,19 @@ export function blocksToMarkdown(blocks, {
     } else if (type === 'divider') {
       line = `${pad}---`;
     } else if (type === 'child_page') {
-      line = `${pad}[child page: ${payload.title ?? block.id}]`;
+      const childTitle = payload.title || block.id;
+      line = `${pad}# ${childTitle}`;
     } else if (type === 'child_database') {
       line = `${pad}[child database: ${payload.title ?? block.id}]`;
     } else if (type === 'link_to_page') {
       const target = payload.page_id || payload.database_id || '';
-      line = target ? `${pad}[link to page](https://www.notion.so/${String(target).replace(/-/g, '')})` : `${pad}[link to page]`;
+      const expanded = block._expanded_title;
+      if (expanded) line = `${pad}# ${expanded}`;
+      else {
+        line = target
+          ? `${pad}[link to page](https://www.notion.so/${String(target).replace(/-/g, '')})`
+          : `${pad}[link to page]`;
+      }
     } else if (MEDIA_URL_TYPES.has(type)) {
       const url = payload.url
         || payload.external?.url
@@ -298,7 +307,40 @@ async function loadTree(env, blockId, state, depth) {
   }
   const children = await fetchAllChildren(env, blockId, state);
   for (const block of children) {
+    if (block.type === 'link_to_page' && block.link_to_page?.type === 'page_id' && block.link_to_page.page_id) {
+      let pid;
+      try {
+        pid = normalizePageId(block.link_to_page.page_id);
+      } catch {
+        continue;
+      }
+      if (state.visitedPages.has(pid)) continue;
+      if (state.linkedPages >= MAX_LINKED_PAGES) {
+        state.errors.push({
+          where: `link_to_page/${pid}`,
+          message: `Достигнут лимит связанных страниц (${MAX_LINKED_PAGES}).`,
+        });
+        state.complete = false;
+        continue;
+      }
+      state.visitedPages.add(pid);
+      state.linkedPages += 1;
+      try {
+        const pageRes = await notionGet(env, `/pages/${pid}`);
+        if (pageRes.ok) {
+          const pageJson = await pageRes.json();
+          block._expanded_title = extractTitle(pageJson) || pid;
+        } else {
+          block._expanded_title = pid;
+        }
+      } catch {
+        block._expanded_title = pid;
+      }
+      block.children = await loadTree(env, pid, state, depth + 1);
+      continue;
+    }
     if (block.has_children) {
+      if (block.type === 'child_page') state.visitedPages.add(block.id);
       block.children = await loadTree(env, block.id, state, depth + 1);
     }
   }
@@ -337,6 +379,8 @@ export async function readNotionPage(env, { pageId = FIRST_CHAPTER_PAGE_ID, sour
   }
 
   const title = extractTitle(page);
+  state.visitedPages = new Set([id]);
+  state.linkedPages = 0;
   const blocks = await loadTree(env, id, state, 0);
   const rendered = blocksToMarkdown(blocks, { unknownBlockTypes: state.unknownBlockTypes });
 

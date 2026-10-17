@@ -15,6 +15,11 @@ import {
   NOTION_API,
 } from '../src/notion/readPage.js';
 import { MEMORY_CONSENT_VERSION } from '../src/bi/consent.js';
+import {
+  resolveNotionPortion,
+  sliceNotionPortion,
+  NOTION_TEACH_TEXT_MAX,
+} from '../src/bi/notionTeach.js';
 
 async function asAdmin(api) {
   const passkey = await createAuthenticator();
@@ -92,6 +97,28 @@ test('findNotionPageRef: app.notion.com и notion.so', () => {
   const b = findNotionPageRef('https://www.notion.so/Title-3f622db3cb0880598c37e17046263550');
   assert.equal(b.pageId, FIRST_CHAPTER_PAGE_ID);
   assert.equal(findNotionPageRef('нет ссылки'), null);
+});
+
+test('порции Notion: slice и «дальше» / «часть N»', () => {
+  const long = `${'А'.repeat(1000)}\n\n## Раздел\n\n${'Б'.repeat(NOTION_TEACH_TEXT_MAX)}`;
+  const p0 = sliceNotionPortion(long, 0, 2000);
+  assert.ok(p0.totalPortions >= 2);
+  assert.equal(p0.portion, 0);
+  assert.match(p0.text, /дальше/);
+  const p1 = sliceNotionPortion(long, 1, 2000);
+  assert.equal(p1.portion, 1);
+  assert.match(p1.text, /продолжение/);
+
+  const id = FIRST_CHAPTER_PAGE_ID;
+  assert.equal(resolveNotionPortion(FIRST_CHAPTER_SOURCE_URL, [], id), 0);
+  assert.equal(
+    resolveNotionPortion('дальше', [{ role: 'user', text: FIRST_CHAPTER_SOURCE_URL }], id),
+    1,
+  );
+  assert.equal(
+    resolveNotionPortion('часть 3', [{ role: 'user', text: FIRST_CHAPTER_SOURCE_URL }], id),
+    2,
+  );
 });
 
 test('richText и блоки: заголовки, цитата, списки, ссылки, вложенность, неизвестный тип', () => {
@@ -255,7 +282,7 @@ test('GET /admin/notion/page: только admin; без токена — unconf
   assert.match(notionAudits[0].action, /notion_read:3f622db3/);
 });
 
-test('chat/turn шаг 2: elevated admin — Notion в промпт Би; обычный user — без fetch', async () => {
+test('chat/turn шаг 2: admin — Notion в промпт Би; обычный user — без fetch', async () => {
   const fixture = JSON.parse(
     await readFile(new URL('./fixtures/notion-first-chapter.json', import.meta.url), 'utf8'),
   );
@@ -293,9 +320,10 @@ test('chat/turn шаг 2: elevated admin — Notion в промпт Би; обы
     body: { text: `Вот глава ${FIRST_CHAPTER_SOURCE_URL}` },
   });
   assert.equal(userTurn.status, 200);
-  assert.equal(userTurn.data.notion, null);
+  assert.equal(userTurn.data.notion?.ok, false);
+  assert.equal(userTurn.data.notion?.error?.code, 'admin_only');
   assert.equal(pageCalls.length, 0);
-  assert.doesNotMatch(JSON.stringify(openaiBodies[0].messages), /инженерный подход|Учебный материал из Notion/);
+  assert.match(JSON.stringify(openaiBodies[0].messages), /admin_only|администратора/i);
 
   const { token: adminToken, userId: adminId } = await asAdmin(api);
   await api.call('POST', '/chat/consent', { token: adminToken, body: { accept: true, version: MEMORY_CONSENT_VERSION } });

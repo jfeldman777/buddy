@@ -249,11 +249,13 @@ async function chatTurn(request, env) {
   const lastBiUtterance = typeof body.lastBiReply === 'string'
     ? body.lastBiReply.trim().slice(0, TEXT_MAX)
     : '';
-  const canReadNotion = session.role === 'admin' && session.elevated;
-  // Buddy-018: only Creator (elevated admin) pulls Notion into the Bi prompt.
-  const notionMaterial = (text && canReadNotion)
-    ? await loadNotionTeachingMaterial(env, text, { allow: true })
-    : null;
+  // Buddy-018: Creator (admin role) pulls Notion into the Bi prompt.
+  // URL may be in this turn or earlier today in the transcript.
+  const canReadNotion = session.role === 'admin';
+  const notionMaterial = await loadNotionTeachingMaterial(env, text, {
+    allow: canReadNotion,
+    transcript,
+  });
   const notionTeachingBlock = formatNotionTeachingBlock(notionMaterial);
   if (notionMaterial?.ok) {
     await env.DB.prepare('INSERT INTO admin_audit (admin_id, action, created_at) VALUES (?1, ?2, ?3)')
@@ -303,6 +305,9 @@ async function chatTurn(request, env) {
       title: notionMaterial.title || null,
       truncated: Boolean(notionMaterial.truncated),
       complete: notionMaterial.complete ?? null,
+      portion: notionMaterial.portion ?? null,
+      totalPortions: notionMaterial.totalPortions ?? null,
+      totalChars: notionMaterial.totalChars ?? null,
       error: notionMaterial.error || null,
     }
     : null;

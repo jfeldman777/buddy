@@ -242,7 +242,19 @@ export function initChat({ onProfileChange }) {
       setPhotoPreview(null);
       await biSay([data.reply]);
       await record('chat_turn', {}, [{ type: 'data_sent', what: hadPhoto ? 'текст, фото и переписка за сегодня для Би' : 'реплика и переписка за сегодня для Би', consent: true }], 'Ход Би получен.');
-      setTalkStatus('');
+      if (data.notion?.ok) {
+        const parts = data.notion.totalPortions > 1
+          ? ` часть ${data.notion.portion + 1}/${data.notion.totalPortions}`
+          : '';
+        const more = data.notion.totalPortions > 1 && data.notion.portion + 1 < data.notion.totalPortions
+          ? ' — напишите «дальше»'
+          : '';
+        setTalkStatus(`Notion: «${data.notion.title || data.notion.pageId}»${parts}${more}.`);
+      } else if (data.notion && !data.notion.ok) {
+        setTalkStatus(`Notion: ${data.notion.error?.message || 'не удалось прочитать'}`);
+      } else {
+        setTalkStatus('');
+      }
     } catch (error) {
       setTalkStatus(error.message || 'Ошибка.');
     } finally {
