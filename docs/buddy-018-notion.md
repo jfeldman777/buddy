@@ -33,13 +33,14 @@
 ## Шаг 3. Методист: программа по 13 страницам
 
 - Каталог: [`server/src/notion/tuaiIntroCatalog.js`](../server/src/notion/tuaiIntroCatalog.js) (ровно 13 pageId от Создателя).
-- Чтение корпуса: [`server/src/notion/readCorpus.js`](../server/src/notion/readCorpus.js), `GET /admin/notion/corpus`.
-- Документ: [`docs/curriculum/bi-program-v001.md`](curriculum/bi-program-v001.md) — «Программа обучения Би — версия 001».
-- Обучение Би / экзамены / память — не в этом шаге.
+- Чтение корпуса: [`server/src/notion/readCorpus.js`](../server/src/notion/readCorpus.js), `GET /admin/notion/corpus` (`expandLinkedPages: false`).
+- Локальный dump: `node tools/dump-tuai-corpus.mjs --dev-vars`.
+- Программы: [v001](curriculum/bi-program-v001.md) (зеркало), [**v002**](curriculum/bi-program-v002.md) (API, корпус полный).
 
-Проверка полноты корпуса (эталон): admin + `GET …/admin/notion/corpus` → `complete: true`, 13× `status: "ok"`.
+### Шаг 3А
+Причина «неполноты» 5/8/10/12 в v001 — обрезка публичного зеркала и скрытые toggle; API + Connections дали `complete: true` для всех 13. В корпусе не вшиваются тела соседних `child_page`.
 
-Ещё нет: автоматическое обучение Би, экзаменатор, запись в KB.
+Обучение Би / экзамены / память — не в этом шаге.
 
 ## Настройка (один раз)
 

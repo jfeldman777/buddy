@@ -208,7 +208,7 @@ CORS не считается защитой: он ограничивает то�
 
 ## Buddy-018 · Notion
 
-Чтение учебных страниц Создателя: секрет `NOTION_TOKEN`, `server/src/notion/readPage.js`, `GET /admin/notion/page` (admin). Шаг 2: admin в `POST /chat/turn` со ссылкой Notion — текст в промпт Би (`notionTeach.js`). Шаг 3: каталог 13 стр. «Введение в ТУАИ», `GET /admin/notion/corpus`, программа [curriculum/bi-program-v001.md](curriculum/bi-program-v001.md). Подробности — [buddy-018-notion.md](buddy-018-notion.md).
+Чтение учебных страниц Создателя: секрет `NOTION_TOKEN`, `server/src/notion/readPage.js`, `GET /admin/notion/page` (admin). Шаг 2: admin в `POST /chat/turn` со ссылкой Notion — текст в промпт Би (`notionTeach.js`). Шаг 3/3А: каталог 13 стр., `GET /admin/notion/corpus`, программа [curriculum/bi-program-v002.md](curriculum/bi-program-v002.md) (v001 сохранена). Подробности — [buddy-018-notion.md](buddy-018-notion.md).
 
 ## DCB-010
 

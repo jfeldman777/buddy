@@ -31,7 +31,12 @@ export async function readTuaiIntroCorpus(env) {
   const pages = [];
   for (const entry of TUAI_INTRO_PAGES) {
     try {
-      const page = await readNotionPage(env, { pageId: entry.pageId, sourceUrl: entry.sourceUrl });
+      // Per catalog page: own blocks + toggles; do not embed other chapters via child_page.
+      const page = await readNotionPage(env, {
+        pageId: entry.pageId,
+        sourceUrl: entry.sourceUrl,
+        expandLinkedPages: false,
+      });
       const status = page.complete && (page.text || '').trim() ? 'ok' : 'incomplete';
       pages.push({
         n: entry.n,

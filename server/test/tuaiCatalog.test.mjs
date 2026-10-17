@@ -65,15 +65,25 @@ test('GET /admin/notion/corpus: admin читает каталог; без ток
     }
     if (href.includes('/children')) {
       const blockId = href.split('/v1/blocks/')[1].split('/children')[0];
+      // Corpus mode must not recurse into child_page bodies of other chapters.
       return Response.json({
         object: 'list',
-        results: [{
-          object: 'block',
-          id: `${blockId.slice(0, -1)}a`,
-          type: 'paragraph',
-          has_children: false,
-          paragraph: { rich_text: [{ plain_text: 'Текст страницы корпуса.' }] },
-        }],
+        results: [
+          {
+            object: 'block',
+            id: `${blockId.slice(0, -1)}a`,
+            type: 'paragraph',
+            has_children: false,
+            paragraph: { rich_text: [{ plain_text: 'Текст страницы корпуса.' }] },
+          },
+          {
+            object: 'block',
+            id: `${blockId.slice(0, -1)}b`,
+            type: 'child_page',
+            has_children: true,
+            child_page: { title: 'Другая глава (не раскрывать в корпусе)' },
+          },
+        ],
         has_more: false,
         next_cursor: null,
       });

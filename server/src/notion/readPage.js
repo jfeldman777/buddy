@@ -308,6 +308,7 @@ async function loadTree(env, blockId, state, depth) {
   const children = await fetchAllChildren(env, blockId, state);
   for (const block of children) {
     if (block.type === 'link_to_page' && block.link_to_page?.type === 'page_id' && block.link_to_page.page_id) {
+      if (!state.expandLinkedPages) continue;
       let pid;
       try {
         pid = normalizePageId(block.link_to_page.page_id);
@@ -340,7 +341,11 @@ async function loadTree(env, blockId, state, depth) {
       continue;
     }
     if (block.has_children) {
-      if (block.type === 'child_page') state.visitedPages.add(block.id);
+      // child_page / child_database are other Notion pages — optional expand.
+      if (block.type === 'child_page' || block.type === 'child_database') {
+        if (!state.expandLinkedPages) continue;
+        state.visitedPages.add(block.id);
+      }
       block.children = await loadTree(env, block.id, state, depth + 1);
     }
   }
@@ -351,14 +356,27 @@ async function loadTree(env, blockId, state, depth) {
  * Read a Notion page: title + Markdown body.
  * Does not throw on partial content — returns complete=false and errors[].
  * Throws HttpError only for misconfiguration / invalid id / hard auth failures on the page itself.
+ *
+ * @param {boolean} [options.expandLinkedPages=true] When false, do not pull bodies of child_page /
+ *   link_to_page (corpus mode: one catalog page at a time). Toggles/lists on the page still expand.
  */
-export async function readNotionPage(env, { pageId = FIRST_CHAPTER_PAGE_ID, sourceUrl } = {}) {
+export async function readNotionPage(env, {
+  pageId = FIRST_CHAPTER_PAGE_ID,
+  sourceUrl,
+  expandLinkedPages = true,
+} = {}) {
   if (!env.NOTION_TOKEN) {
     throw new HttpError(503, 'unconfigured', 'Сервер не настроен: нет NOTION_TOKEN.');
   }
   const id = normalizePageId(pageId);
   const url = sourceUrl || sourceUrlForPageId(id);
-  const state = { complete: true, errors: [], blockCount: 0, unknownBlockTypes: new Set() };
+  const state = {
+    complete: true,
+    errors: [],
+    blockCount: 0,
+    unknownBlockTypes: new Set(),
+    expandLinkedPages: expandLinkedPages !== false,
+  };
 
   let page;
   let response;
