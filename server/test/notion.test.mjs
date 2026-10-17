@@ -5,6 +5,7 @@ import { createEnv, registerWithPasskey, loginWithPasskey } from './harness.mjs'
 import { createAuthenticator } from './authenticator.mjs';
 import {
   normalizePageId,
+  findNotionPageRef,
   richTextToMarkdown,
   blocksToMarkdown,
   extractTitle,
@@ -13,6 +14,7 @@ import {
   FIRST_CHAPTER_SOURCE_URL,
   NOTION_API,
 } from '../src/notion/readPage.js';
+import { MEMORY_CONSENT_VERSION } from '../src/bi/consent.js';
 
 async function asAdmin(api) {
   const passkey = await createAuthenticator();
@@ -81,6 +83,15 @@ test('normalizePageId: UUID, без дефисов и публичный пре�
   assert.equal(normalizePageId('3f622db3cb0880598c37e17046263550'), FIRST_CHAPTER_PAGE_ID);
   assert.equal(normalizePageId('1-3f622db3cb0880598c37e17046263550'), FIRST_CHAPTER_PAGE_ID);
   assert.throws(() => normalizePageId('not-an-id'), (err) => err.code === 'bad_page_id');
+});
+
+test('findNotionPageRef: app.notion.com и notion.so', () => {
+  const a = findNotionPageRef(`Прочитай ${FIRST_CHAPTER_SOURCE_URL} пожалуйста`);
+  assert.equal(a.pageId, FIRST_CHAPTER_PAGE_ID);
+  assert.equal(a.sourceUrl, FIRST_CHAPTER_SOURCE_URL);
+  const b = findNotionPageRef('https://www.notion.so/Title-3f622db3cb0880598c37e17046263550');
+  assert.equal(b.pageId, FIRST_CHAPTER_PAGE_ID);
+  assert.equal(findNotionPageRef('нет ссылки'), null);
 });
 
 test('richText и блоки: заголовки, цитата, списки, ссылки, вложенность, неизвестный тип', () => {
@@ -242,4 +253,71 @@ test('GET /admin/notion/page: только admin; без токена — unconf
   );
   assert.equal(notionAudits.length, 1);
   assert.match(notionAudits[0].action, /notion_read:3f622db3/);
+});
+
+test('chat/turn шаг 2: elevated admin — Notion в промпт Би; обычный user — без fetch', async () => {
+  const fixture = JSON.parse(
+    await readFile(new URL('./fixtures/notion-first-chapter.json', import.meta.url), 'utf8'),
+  );
+  const api = await createEnv();
+  const { pageCalls } = installNotionFixture(api, fixture);
+  api.env.OPENAI_API_KEY = 'test-key';
+
+  const userKey = await createAuthenticator();
+  const userReg = await registerWithPasskey(api, userKey);
+  const userToken = userReg.data.session.token;
+  await api.call('POST', '/chat/consent', { token: userToken, body: { accept: true, version: MEMORY_CONSENT_VERSION } });
+
+  const openaiBodies = [];
+  const realFetch = api.env.FETCH;
+  api.env.FETCH = async (url, init) => {
+    const href = String(url);
+    if (href.includes('openai.com')) {
+      openaiBodies.push(JSON.parse(init.body));
+      return Response.json({
+        choices: [{ message: { content: JSON.stringify({
+          utterance: 'Ок, без страницы.',
+          summary: 'user без notion',
+          open_threads: [],
+          memory_candidates: [],
+          used_knowledge_ids: [],
+        }) } }],
+        usage: { prompt_tokens: 40, completion_tokens: 10 },
+      });
+    }
+    return realFetch(url, init);
+  };
+
+  const userTurn = await api.call('POST', '/chat/turn', {
+    token: userToken,
+    body: { text: `Вот глава ${FIRST_CHAPTER_SOURCE_URL}` },
+  });
+  assert.equal(userTurn.status, 200);
+  assert.equal(userTurn.data.notion, null);
+  assert.equal(pageCalls.length, 0);
+  assert.doesNotMatch(JSON.stringify(openaiBodies[0].messages), /инженерный подход|Учебный материал из Notion/);
+
+  const { token: adminToken, userId: adminId } = await asAdmin(api);
+  await api.call('POST', '/chat/consent', { token: adminToken, body: { accept: true, version: MEMORY_CONSENT_VERSION } });
+  openaiBodies.length = 0;
+
+  const adminTurn = await api.call('POST', '/chat/turn', {
+    token: adminToken,
+    body: { text: `Учись по этой главе: ${FIRST_CHAPTER_SOURCE_URL}` },
+  });
+  assert.equal(adminTurn.status, 200);
+  assert.equal(adminTurn.data.notion.ok, true);
+  assert.equal(adminTurn.data.notion.pageId, FIRST_CHAPTER_PAGE_ID);
+  assert.match(adminTurn.data.notion.title, /инженерный подход/);
+  assert.ok(pageCalls.length >= 1);
+  const blob = JSON.stringify(openaiBodies[0].messages);
+  assert.match(blob, /Учебный материал из Notion/);
+  assert.match(blob, /Вторая страница пагинации/);
+  assert.match(blob, /не просите вставить текст|НЕ просите вставить текст/i);
+
+  const teachAudits = api.sql(
+    "SELECT action FROM admin_audit WHERE admin_id = ? AND action LIKE 'notion_teach:%'",
+    adminId,
+  );
+  assert.equal(teachAudits.length, 1);
 });

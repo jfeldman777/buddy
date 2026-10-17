@@ -206,9 +206,9 @@ CORS не считается защитой: он ограничивает то�
 | Telegram Bot API | уведомления разработчику | бесплатно |
 | OpenAI API | ответы Би | не больше суммы выданных лимитов и пробного потолка |
 
-## Buddy-018 · Notion (шаг 1)
+## Buddy-018 · Notion
 
-Чтение учебных страниц Создателя: секрет `NOTION_TOKEN`, модуль `server/src/notion/readPage.js`, `GET /admin/notion/page` (только admin). Подробности — [buddy-018-notion.md](buddy-018-notion.md).
+Чтение учебных страниц Создателя: секрет `NOTION_TOKEN`, `server/src/notion/readPage.js`, `GET /admin/notion/page` (admin). Шаг 2: elevated admin в `POST /chat/turn` со ссылкой Notion — текст страницы попадает в промпт Би (`notionTeach.js`). Подробности — [buddy-018-notion.md](buddy-018-notion.md).
 
 ## DCB-010
 

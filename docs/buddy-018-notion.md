@@ -1,16 +1,35 @@
-# Buddy-018 · Шаг 1. Чтение Notion
+# Buddy-018 · Notion
 
-Минимальный канал: Worker читает одну учебную страницу Notion через официальный API и отдаёт Markdown администратору. UI обучения и запись в память Би — следующие шаги.
+Обучение Би от Создателя: страницы Notion → сервер → Би. Порциями, с проверкой; UI памяти учений — следующие шаги.
 
-## Что сделано
+## Шаг 1. Чтение страницы (admin API)
 
-- Модуль [`server/src/notion/readPage.js`](../server/src/notion/readPage.js): нормализация id, рекурсивные `blocks/.../children`, Markdown (заголовки, списки, цитаты, ссылки).
+Минимальный канал: Worker читает одну учебную страницу через официальный API и отдаёт Markdown администратору.
+
+- Модуль [`server/src/notion/readPage.js`](../server/src/notion/readPage.js): нормализация id, рекурсивные `blocks/.../children`, Markdown.
 - `GET /admin/notion/page` — только elevated admin; по умолчанию первая глава:
   - id `3f622db3-cb08-8059-8c37-e17046263550`
   - url `https://app.notion.com/p/1-3f622db3cb0880598c37e17046263550`
 - Параметры: `?id=` и опционально `?url=`.
-- Автотесты на фикстуре: [`server/test/notion.test.mjs`](../server/test/notion.test.mjs).
+- Автотесты: [`server/test/notion.test.mjs`](../server/test/notion.test.mjs).
 - Секрет: `NOTION_TOKEN` (не в репозитории).
+
+## Шаг 2. Notion в чате Би (Создатель)
+
+Когда **elevated admin** в обычном чате присылает ссылку Notion (`notion.so` / `app.notion.com`), Worker:
+
+1. Извлекает page id (`findNotionPageRef`).
+2. Читает страницу тем же `readNotionPage`.
+3. Кладёт Markdown в промпт Би (лимит ~14k символов на ход).
+4. Би получает явную инструкцию: материал уже прочитан, не просить «вставить текст».
+
+Ответ `POST /chat/turn` дополняется полем `notion` (`ok`, `pageId`, `title`, …). Аудит: `notion_teach:<pageId>`.
+
+Обычный пользователь со ссылкой Notion: fetch **не** выполняется (`notion: null`) — учебные страницы только для Создателя.
+
+Код: [`server/src/bi/notionTeach.js`](../server/src/bi/notionTeach.js), вызов из [`server/src/bi/routes.js`](../server/src/bi/routes.js). Стратегия чата: `buddy-abi-v2`.
+
+Ещё нет: отдельный UI обучения, запись главы в долговременную KB/учения, порционная проверка усвоения.
 
 ## Настройка (один раз)
 
@@ -23,15 +42,15 @@
    ```
    Локально — строка `NOTION_TOKEN=...` в `server/.dev.vars`.
 4. На странице Notion: **⋯ → Connections** → подключить эту integration.
-5. Задеплоить Worker, если ещё не задеплоен код шага 1:
+5. Задеплоить Worker:
    ```powershell
    npx wrangler deploy --config server/wrangler.toml
    ```
 
 ## Проверка
 
-Войти администратором (passkey), затем с токеном сессии:
+**API:** войти администратором (passkey), затем  
+`GET https://buddy-api.jfeldman777.workers.dev/admin/notion/page`  
+→ `{ sourceUrl, pageId, title, text, complete, … }`.
 
-`GET https://buddy-api.jfeldman777.workers.dev/admin/notion/page`
-
-Ответ: `{ sourceUrl, pageId, title, text, complete, unknownBlockTypes, errors }`.
+**Чат:** войти как admin (elevated), согласие на память Би, отправить ссылку на главу → Би опирается на текст страницы, в ответе API есть `notion.ok: true`.

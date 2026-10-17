@@ -124,9 +124,11 @@ test('промпт А–Би включает память и учение; бе
     ],
     lastBiUtterance: 'Как прошёл день?',
     hasPhoto: true,
+    notionTeachingBlock: 'Учебный материал из Notion уже прочитан сервером Buddy\n---\nТекст главы',
   });
   assert.match(prompt.system, /подтверждение/i);
   assert.match(prompt.system, /последняя реплика/);
+  assert.match(prompt.system, /Учебный материал из Notion/);
   assert.match(prompt.user, /Любит шахматы/);
   assert.match(prompt.user, /сначала спроси/);
   assert.match(prompt.user, /Общее: будь краток/);
@@ -135,6 +137,7 @@ test('промпт А–Би включает память и учение; бе
   assert.match(prompt.user, /Би: Как прошёл день\?/);
   assert.match(prompt.user, /А: Нормально, устал/);
   assert.match(prompt.user, /Ваша последняя реплика Би/);
+  assert.match(prompt.user, /Текст главы/);
   assert.doesNotMatch(`${prompt.system}\n${prompt.user}`, /secret_bio|hidden-bio-marker/);
 });
 

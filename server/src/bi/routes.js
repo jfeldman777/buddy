@@ -5,6 +5,7 @@ import { chatBudgetView } from './chatBudget.js';
 import { MEMORY_CONSENT_TEXT, MEMORY_CONSENT_VERSION } from './consent.js';
 import { buildABiPrompt, ABI_STRATEGY_VERSION } from './prompts.js';
 import { chatJson } from './openai.js';
+import { formatNotionTeachingBlock, loadNotionTeachingMaterial } from './notionTeach.js';
 
 const TEXT_MAX = 4_000;
 const TURN_BODY_MAX = 400 * 1024;
@@ -248,6 +249,16 @@ async function chatTurn(request, env) {
   const lastBiUtterance = typeof body.lastBiReply === 'string'
     ? body.lastBiReply.trim().slice(0, TEXT_MAX)
     : '';
+  const canReadNotion = session.role === 'admin' && session.elevated;
+  // Buddy-018: only Creator (elevated admin) pulls Notion into the Bi prompt.
+  const notionMaterial = (text && canReadNotion)
+    ? await loadNotionTeachingMaterial(env, text, { allow: true })
+    : null;
+  const notionTeachingBlock = formatNotionTeachingBlock(notionMaterial);
+  if (notionMaterial?.ok) {
+    await env.DB.prepare('INSERT INTO admin_audit (admin_id, action, created_at) VALUES (?1, ?2, ?3)')
+      .bind(session.userId, `notion_teach:${notionMaterial.ref.pageId}`, iso(env)).run();
+  }
   const prompt = buildABiPrompt({
     displayName,
     memoryEntries: bundle.entries,
@@ -258,6 +269,7 @@ async function chatTurn(request, env) {
     transcript,
     lastBiUtterance,
     hasPhoto: Boolean(photoData),
+    notionTeachingBlock,
   });
   const userMessage = [
     text || (opening ? '(А открыл разговор и ждёт вас.)' : '(А прислал фото без текста.)'),
@@ -283,6 +295,17 @@ async function chatTurn(request, env) {
 
   const budget = await chatBudgetView(env);
   const epoch = await knowledgeEpoch(env);
+  const notionMeta = notionMaterial
+    ? {
+      pageId: notionMaterial.ref.pageId,
+      sourceUrl: notionMaterial.ref.sourceUrl,
+      ok: notionMaterial.ok,
+      title: notionMaterial.title || null,
+      truncated: Boolean(notionMaterial.truncated),
+      complete: notionMaterial.complete ?? null,
+      error: notionMaterial.error || null,
+    }
+    : null;
   return json({
     reply: utterance,
     sessionId: chatSessionId,
@@ -293,6 +316,7 @@ async function chatTurn(request, env) {
     strategyVersion: ABI_STRATEGY_VERSION,
     budget,
     usage,
+    notion: notionMeta,
   });
 }
 

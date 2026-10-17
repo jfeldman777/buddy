@@ -36,6 +36,33 @@ export function normalizePageId(raw) {
   return `${hex.slice(0, 8)}-${hex.slice(8, 12)}-${hex.slice(12, 16)}-${hex.slice(16, 20)}-${hex.slice(20)}`;
 }
 
+const NOTION_URL_RE = /https?:\/\/(?:www\.|app\.)?notion\.(?:so|com)\/[^\s<>'")\]]+/gi;
+/** Last path segment ends with optional title-, optional N-, then 32 hex. */
+const PAGE_ID_IN_SEGMENT_RE = /(?:^|-)([0-9a-fA-F]{32})$/i;
+
+/**
+ * Find the first Notion page URL in free text (Buddy-018 teaching).
+ * @returns {{ pageId: string, sourceUrl: string } | null}
+ */
+export function findNotionPageRef(text) {
+  const raw = String(text ?? '');
+  for (const match of raw.matchAll(NOTION_URL_RE)) {
+    let href = match[0].replace(/[.,;:!?]+$/, '');
+    try {
+      const u = new URL(href);
+      const path = decodeURIComponent(u.pathname);
+      const segment = path.split('/').filter(Boolean).pop() || '';
+      const idMatch = PAGE_ID_IN_SEGMENT_RE.exec(segment);
+      if (!idMatch) continue;
+      const pageId = normalizePageId(idMatch[1]);
+      return { pageId, sourceUrl: href };
+    } catch {
+      /* try next match */
+    }
+  }
+  return null;
+}
+
 export function sourceUrlForPageId(pageId) {
   const id = normalizePageId(pageId);
   if (id === FIRST_CHAPTER_PAGE_ID) return FIRST_CHAPTER_SOURCE_URL;

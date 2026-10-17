@@ -1,5 +1,5 @@
 // A–Bi prompts. Must never receive DCB secret_bio. Shared conceptual engine with DCB Bi.
-export const ABI_STRATEGY_VERSION = 'buddy-abi-v1';
+export const ABI_STRATEGY_VERSION = 'buddy-abi-v2';
 
 const ROLE_LABEL = { user: 'А', bi: 'Би' };
 
@@ -21,6 +21,7 @@ export function buildABiPrompt({
   transcript = [],
   lastBiUtterance = '',
   hasPhoto = false,
+  notionTeachingBlock = '',
 }) {
   const nameLine = displayName ? `К собеседнику можно обращаться: ${displayName} (если он так представился на устройстве).` : 'Имя на сервере не хранится — спросите, как обращаться, если ещё не ясно.';
 
@@ -47,6 +48,10 @@ export function buildABiPrompt({
     || context?.lastUtterance
     || '';
 
+  const notionHint = notionTeachingBlock
+    ? 'Если ниже есть блок «Учебный материал из Notion» — текст уже доставлен сервером. Работайте с ним; не говорите, что не умеете открывать ссылки Notion, и не просите вставить тот же текст вручную.'
+    : '';
+
   const system = `Вы — Би, ИИ-помощник Buddy. Вы общаетесь с реальным человеком А на русском языке.
 Версия стратегии: ${ABI_STRATEGY_VERSION}.
 
@@ -58,6 +63,7 @@ export function buildABiPrompt({
 У вас есть переписка за сегодня и ваша последняя реплика. Текущее сообщение А — ответ на вашу последнюю реплику (если она есть): разбирайте смысл именно в этой связке, не притворяйтесь, что не помните, о чём только что говорили.
 
 ${hasPhoto ? 'А приложил фото. Можно выдвинуть осторожное предположение, но ОБЯЗАТЕЛЬНО спросите подтверждение. Не утверждайте внешность как факт без ответа А.' : ''}
+${notionHint}
 
 Используйте известную память, личные учения А и утверждённые общие знания/стратегии ниже. Не выдумывайте, что А не говорил. Не объявляйте любое высказывание новым «учением» — только если А явно учит или подтверждает.
 
@@ -89,8 +95,10 @@ ${hasPhoto ? 'А приложил фото. Можно выдвинуть ост
     'Ваша последняя реплика Би (на неё отвечает А, если есть текущее сообщение):',
     lastBi || '(ещё не было реплики Би в этом разговоре)',
     '',
+    notionTeachingBlock || '',
+    notionTeachingBlock ? '' : '',
     'Сделайте следующий ход Би.',
-  ].join('\n');
+  ].filter((line, i, arr) => !(line === '' && arr[i - 1] === '')).join('\n');
 
   return { system, user, strategyVersion: ABI_STRATEGY_VERSION };
 }
