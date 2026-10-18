@@ -16,3 +16,7 @@ docs/curriculum/corpus-dumps/
 .wrangler/
 .DS_Store
 Thumbs.db
+
+# Local D1 exports (may contain user data)
+backups/
+
