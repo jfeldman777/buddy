@@ -14,6 +14,8 @@ const teachStatus = $('admin-teach-status');
 const teachResult = $('admin-teach-result');
 const teachFragment = $('admin-teach-fragment');
 const teachBtn = $('admin-teach-run');
+const teachChainBtn = $('admin-teach-chain');
+const teachChainStatus = $('admin-teach-chain-status');
 const disputesList = $('admin-disputes-list');
 const disputeDetail = $('admin-dispute-detail');
 const disputeManual = $('admin-dispute-manual');
@@ -386,12 +388,85 @@ async function loadDisputes() {
   }
 }
 
+async function loadFragments() {
+  if (!session?.token || !teachFragment) return;
+  const data = await api.adminTeachFragments(session.token);
+  const frags = data.fragments || [];
+  teachFragment.replaceChildren();
+  for (const f of frags) {
+    const opt = document.createElement('option');
+    opt.value = f.fragmentId;
+    opt.textContent = `${f.fragmentId} — ${f.title}`;
+    teachFragment.append(opt);
+  }
+  const manual = $('admin-manual-fragment');
+  if (manual) {
+    manual.replaceChildren();
+    for (const f of frags) {
+      const opt = document.createElement('option');
+      opt.value = f.fragmentId;
+      opt.textContent = f.fragmentId;
+      manual.append(opt);
+    }
+  }
+}
+
+function showChainStatus(text) {
+  if (!teachChainStatus) return;
+  teachChainStatus.textContent = text;
+  teachChainStatus.hidden = !text;
+}
+
+async function runTeachChain() {
+  if (!session?.token || teachRunning) return;
+  teachRunning = true;
+  teachBtn.disabled = true;
+  if (teachChainBtn) teachChainBtn.disabled = true;
+  if (teachFragment) teachFragment.disabled = true;
+  teachResult.hidden = true;
+  teachResult.replaceChildren();
+  showTeachStatus('Старт цепочки F01–F15…');
+  showChainStatus('');
+  try {
+    const { run } = await api.adminTeachChainStart(session.token, {});
+    let current = run;
+    let lastReport = null;
+    while (current.status === 'running' && current.nextFragmentId) {
+      showTeachStatus(`Цепочка: выполняется ${current.nextFragmentId} (${current.cursorIndex + 1}/${current.fragmentIds.length})…`);
+      const step = await api.adminTeachChainContinue(session.token, current.id);
+      current = step.run;
+      if (step.report) {
+        lastReport = step.report;
+        renderTeachReport(step.report);
+      }
+      if (step.stopped) break;
+    }
+    showTeachStatus('');
+    const summary = (current.results || []).map((r) => `${r.fragmentId}:${r.status}`).join(', ');
+    showChainStatus(
+      `Цепочка ${current.status}`
+      + (current.pauseReason ? ` — ${current.pauseReason}` : '')
+      + (summary ? ` | ${summary}` : ''),
+    );
+    if (lastReport) renderTeachReport(lastReport);
+  } catch (error) {
+    console.warn(error);
+    showTeachStatus(error.message || 'Цепочку не удалось выполнить.');
+  } finally {
+    teachRunning = false;
+    teachBtn.disabled = false;
+    if (teachChainBtn) teachChainBtn.disabled = false;
+    if (teachFragment) teachFragment.disabled = false;
+  }
+}
+
 async function show() {
   const admin = Boolean(session?.user.admin);
   panel.hidden = !admin;
   signedOut.hidden = admin;
   if (admin) {
     await loadUsers();
+    await loadFragments();
     await loadDisputes();
   } else if (session) showStatus('Эта учётная запись не администратор, или вход был без passkey с отпечатком, лицом или PIN-кодом.');
 }
@@ -448,6 +523,7 @@ $('admin-logout').addEventListener('click', () => act(async () => {
 }));
 
 teachBtn.addEventListener('click', () => act(runTeachCycle));
+teachChainBtn?.addEventListener('click', () => act(runTeachChain));
 
 $('admin-disputes-refresh')?.addEventListener('click', () => act(loadDisputes));
 

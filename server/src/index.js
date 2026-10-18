@@ -26,6 +26,8 @@ import {
   createTeachRuling,
   listTeachRulings,
 } from './teach/disputes.js';
+import { startTeachChain, continueTeachChain, getTeachChain, listTeachChains } from './teach/chain.js';
+import { listFragmentSpecs, DEFAULT_CHAIN_IDS } from './teach/fragmentSpecs.js';
 
 const iso = (env) => new Date(now(env)).toISOString();
 
@@ -381,6 +383,53 @@ const routes = {
     const fragmentId = new URL(request.url).searchParams.get('fragmentId') || '';
     const rulings = await listTeachRulings(env, fragmentId);
     return json({ fragmentId: rulings[0]?.fragmentId || String(fragmentId).toUpperCase(), rulings });
+  },
+
+  // Step 7A: approved chain + one-fragment steps (stop on fail / open dispute).
+  'GET /admin/teach/fragments': async (request, env) => {
+    const session = await requireAdmin(request, env);
+    await rateLimit(env, 'LIMIT_USER', session.userId);
+    return json({ chain: DEFAULT_CHAIN_IDS, fragments: listFragmentSpecs() });
+  },
+
+  'POST /admin/teach/chain/start': async (request, env) => {
+    const session = await requireAdmin(request, env);
+    await rateLimit(env, 'LIMIT_USER', session.userId);
+    const body = await request.json().catch(() => ({}));
+    const run = await startTeachChain(env, {
+      adminId: session.userId,
+      fragmentIds: body?.fragmentIds,
+    });
+    await env.DB.prepare('INSERT INTO admin_audit (admin_id, action, created_at) VALUES (?1, ?2, ?3)')
+      .bind(session.userId, `teach_chain_start:${run.id}`, iso(env)).run();
+    return json({ run }, 201);
+  },
+
+  'POST /admin/teach/chain/continue': async (request, env) => {
+    const session = await requireAdmin(request, env);
+    await rateLimit(env, 'LIMIT_USER', session.userId);
+    const body = await request.json().catch(() => ({}));
+    const result = await continueTeachChain(env, body?.runId, { adminId: session.userId });
+    await env.DB.prepare('INSERT INTO admin_audit (admin_id, action, created_at) VALUES (?1, ?2, ?3)')
+      .bind(
+        session.userId,
+        `teach_chain_step:${body?.runId}:${result.run.status}:${result.run.cursorIndex}`,
+        iso(env),
+      ).run();
+    return json(result);
+  },
+
+  'GET /admin/teach/chain': async (request, env) => {
+    const session = await requireAdmin(request, env);
+    await rateLimit(env, 'LIMIT_USER', session.userId);
+    const id = new URL(request.url).searchParams.get('id') || '';
+    return json({ run: await getTeachChain(env, id) });
+  },
+
+  'GET /admin/teach/chains': async (request, env) => {
+    const session = await requireAdmin(request, env);
+    await rateLimit(env, 'LIMIT_USER', session.userId);
+    return json({ runs: await listTeachChains(env) });
   },
 };
 

@@ -62,6 +62,18 @@ export function createApi(base, fetchImpl = (...args) => fetch(...args)) {
       token,
       body: { fragmentId },
     }),
+    adminTeachFragments: (token) => call('GET', '/admin/teach/fragments', { token }),
+    adminTeachChainStart: (token, body = {}) => call('POST', '/admin/teach/chain/start', { token, body }),
+    adminTeachChainContinue: (token, runId) => call('POST', '/admin/teach/chain/continue', {
+      token,
+      body: { runId },
+    }),
+    adminTeachChainGet: (token, id) => call(
+      'GET',
+      `/admin/teach/chain?id=${encodeURIComponent(id)}`,
+      { token },
+    ),
+    adminTeachChains: (token) => call('GET', '/admin/teach/chains', { token }),
     /** Step 6: open dispute (also step-5 /ruling alias). */
     adminTeachDispute: (token, body) => call('POST', '/admin/teach/dispute', { token, body }),
     adminTeachDisputes: (token, { fragmentId, status } = {}) => {

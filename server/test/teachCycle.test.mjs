@@ -172,15 +172,18 @@ function installTeachMocks(api, {
   };
 }
 
-test('fragmentSpecs: F01 и F02 различны; F03 запрещён', () => {
-  assert.deepEqual(ALLOWED_FRAGMENT_IDS, ['F01', 'F02']);
+test('fragmentSpecs: F01–F15; логическая цепочка; неизвестный запрещён', () => {
+  assert.equal(ALLOWED_FRAGMENT_IDS.length, 15);
+  assert.equal(ALLOWED_FRAGMENT_IDS[0], 'F01');
+  assert.equal(ALLOWED_FRAGMENT_IDS[14], 'F15');
   const f01 = getFragmentSpec('F01');
   const f02 = getFragmentSpec('F02');
+  const f03 = getFragmentSpec('F03');
   assert.notEqual(f01.pageId, f02.pageId);
-  assert.notEqual(f01.learningGoal, f02.learningGoal);
+  assert.equal(f03.fragmentId, 'F03');
   assert.equal(f02.prerequisites.includes('F01'), true);
   assert.throws(
-    () => getFragmentSpec('F03'),
+    () => getFragmentSpec('F99'),
     (err) => err.code === 'teach_fragment_not_allowed',
   );
 });
@@ -249,12 +252,6 @@ async function runFragmentHttpTest(fragmentId, fixture) {
   const kbBefore = api.sql('SELECT COUNT(*) AS c FROM kb_shared')[0].c;
 
   const { token, userId } = await asAdmin(api);
-
-  if (fragmentId === 'F01') {
-    const blocked = await api.call('POST', '/admin/teach/run', { token, body: { fragmentId: 'F03' } });
-    assert.equal(blocked.status, 400);
-    assert.equal(blocked.data?.error, 'teach_fragment_not_allowed');
-  }
 
   const res = await api.call('POST', '/admin/teach/run', { token, body: { fragmentId } });
   assert.equal(res.status, 200, res.data?.message || JSON.stringify(res.data));

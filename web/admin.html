@@ -41,17 +41,16 @@
       </div>
 
       <h2 class="admin-teach-heading">Обучение Би</h2>
-      <p class="note">Buddy-018 · шаг 5–6. Один запуск — один учебный цикл (F01/F02). «Не согласен» сразу открывает разногласие (open) — это открытый вопрос, не утверждённое знание. После обсуждения Создатель может закрыть разногласие; только тогда вывод пишется в учения Би.</p>
+      <p class="note">Buddy-018 · шаг 7A. Цепочка F01–F15 (порядок программы v002). Один фрагмент или вся цепочка по шагам; стоп при провале или открытом разногласии. «Не согласен» → журнал (open). Загрузка файлов, Методист-перестановка, роли проверяющих — следующие фазы.</p>
       <div class="admin-teach-controls">
         <label class="admin-teach-label" for="admin-teach-fragment">Учебный фрагмент
-          <select id="admin-teach-fragment">
-            <option value="F01">F01 — Инженер-философ и картина мира</option>
-            <option value="F02">F02 — Четыре класса трудных вопросов</option>
-          </select>
+          <select id="admin-teach-fragment"></select>
         </label>
         <button type="button" class="btn btn-primary" id="admin-teach-run">Начать обучение</button>
+        <button type="button" class="btn" id="admin-teach-chain">Запустить цепочку F01–F15</button>
       </div>
       <p id="admin-teach-status" class="note" hidden></p>
+      <div id="admin-teach-chain-status" class="note" hidden></div>
       <div id="admin-teach-result" class="admin-teach-result" hidden></div>
 
       <h2 class="admin-teach-heading">Журнал разногласий</h2>
@@ -84,7 +83,7 @@
   <footer>
     <a href="./">Buddy</a>
     <a href="https://github.com/jfeldman777/buddy">Исходный код</a>
-    <span>Alpha 0.01 · версия <span data-version>023</span></span>
+    <span>Alpha 0.01 · версия <span data-version>024</span></span>
     <button type="button" class="link-button" data-check-update>Проверить обновления</button>
   </footer>
 </body>
