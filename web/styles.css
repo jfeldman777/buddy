@@ -799,6 +799,30 @@ body.chat-open footer {
   gap: 0.5rem;
 }
 
+.admin-disputes-list {
+  display: flex;
+  flex-direction: column;
+  gap: 0.75rem;
+  margin-top: 0.75rem;
+}
+
+.admin-dispute-detail {
+  margin-top: 1rem;
+  padding-top: 0.75rem;
+  border-top: 1px solid color-mix(in srgb, currentColor 18%, transparent);
+}
+
+.admin-dispute-detail textarea,
+.admin-dispute-detail select,
+.admin-dispute-detail .btn {
+  margin: 0.35rem 0.35rem 0.35rem 0;
+}
+
+.admin-dispute-msg {
+  margin: 0.35rem 0;
+  white-space: pre-wrap;
+}
+
 .admin-teach-result {
   margin-top: 1rem;
 }

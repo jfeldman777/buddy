@@ -41,7 +41,7 @@
       </div>
 
       <h2 class="admin-teach-heading">Обучение Би</h2>
-      <p class="note">Buddy-018 · шаг 5. Один запуск — один учебный цикл по выбранному фрагменту программы. Экспериментальная проверка: в память Би ничего не пишется. Пока доступны только F01 и F02. Если не согласны с Экзаменатором — «Не согласен» у задачи; вердикт учтётся при следующем запуске этого фрагмента (без смены версии сайта).</p>
+      <p class="note">Buddy-018 · шаг 5–6. Один запуск — один учебный цикл (F01/F02). «Не согласен» сразу открывает разногласие (open) — это открытый вопрос, не утверждённое знание. После обсуждения Создатель может закрыть разногласие; только тогда вывод пишется в учения Би.</p>
       <div class="admin-teach-controls">
         <label class="admin-teach-label" for="admin-teach-fragment">Учебный фрагмент
           <select id="admin-teach-fragment">
@@ -53,13 +53,38 @@
       </div>
       <p id="admin-teach-status" class="note" hidden></p>
       <div id="admin-teach-result" class="admin-teach-result" hidden></div>
+
+      <h2 class="admin-teach-heading">Журнал разногласий</h2>
+      <p class="note">Сохранённые замечания Создателя. Можно обсудить с Би, добавить реплику или закрыть с подтверждённым выводом. Ручной ввод — если экзамен не сохранился, а замечание нужно привязать к задаче.</p>
+      <div class="admin-teach-controls">
+        <button type="button" class="btn" id="admin-disputes-refresh">Обновить журнал</button>
+        <button type="button" class="btn" id="admin-dispute-manual-toggle">Ввести вручную</button>
+      </div>
+      <div id="admin-dispute-manual" class="admin-teach-ruling" hidden>
+        <label class="admin-teach-label" for="admin-manual-fragment">Фрагмент
+          <select id="admin-manual-fragment">
+            <option value="F02">F02</option>
+            <option value="F01">F01</option>
+          </select>
+        </label>
+        <input id="admin-manual-task" type="text" placeholder="Номер задачи, напр. t1" />
+        <textarea id="admin-manual-prompt" rows="3" placeholder="Условие задачи"></textarea>
+        <textarea id="admin-manual-answer" rows="3" placeholder="Ответ Би (если помните)"></textarea>
+        <textarea id="admin-manual-examiner" rows="2" placeholder="Оценка Экзаменатора (если помните)"></textarea>
+        <textarea id="admin-manual-remark" rows="4" placeholder="Дословное замечание Создателя (обязательно)"></textarea>
+        <div class="admin-teach-ruling-actions">
+          <button type="button" class="btn btn-primary" id="admin-dispute-manual-save">Сохранить разногласие</button>
+        </div>
+      </div>
+      <div id="admin-disputes-list" class="admin-disputes-list"></div>
+      <div id="admin-dispute-detail" class="admin-dispute-detail" hidden></div>
     </section>
   </main>
 
   <footer>
     <a href="./">Buddy</a>
     <a href="https://github.com/jfeldman777/buddy">Исходный код</a>
-    <span>Alpha 0.01 · версия <span data-version>021</span></span>
+    <span>Alpha 0.01 · версия <span data-version>022</span></span>
     <button type="button" class="link-button" data-check-update>Проверить обновления</button>
   </footer>
 </body>

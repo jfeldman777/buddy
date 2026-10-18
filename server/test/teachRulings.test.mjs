@@ -27,8 +27,9 @@ test('formatRulingsForExaminer: пусто / с вердиктом', () => {
     creatorRuling: 'Это (357): устройство, не поведение. 357≠246.',
     sourceRef: 'коды (357)(246)',
   }]);
-  assert.match(block, /Вердикт Создателя/);
+  assert.match(block, /Замечание Создателя|Вердикт Создателя/);
   assert.match(block, /357≠246/);
+  assert.match(block, /НЕ утверждённое знание|Открытые разногласия/);
 });
 
 test('промпты: вердикты только у Экзаменатора, не у Ученика', () => {
@@ -77,7 +78,7 @@ test('POST /admin/teach/ruling + следующий run подмешивает �
   });
   assert.equal(created.status, 201, JSON.stringify(created.data));
   assert.equal(created.data.ruling.fragmentId, 'F02');
-  assert.match(created.data.note, /следующем/i);
+  assert.match(created.data.note, /open|разноглас/i);
 
   assert.equal(api.sql('SELECT COUNT(*) AS c FROM bi_memory_entries')[0].c, memBefore);
   assert.equal(api.sql('SELECT COUNT(*) AS c FROM bi_teachings')[0].c, teachBefore);
@@ -188,7 +189,7 @@ test('POST /admin/teach/ruling + следующий run подмешивает �
   assert.ok(pupilUsers.every((u) => !/SECRET_RUBRIC/.test(u)));
 
   const audits = api.sql(
-    "SELECT action FROM admin_audit WHERE admin_id = ? AND action LIKE 'teach_ruling:%'",
+    "SELECT action FROM admin_audit WHERE admin_id = ? AND action LIKE 'teach_dispute:%'",
     userId,
   );
   assert.equal(audits.length, 1);

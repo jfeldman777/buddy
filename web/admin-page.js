@@ -14,10 +14,19 @@ const teachStatus = $('admin-teach-status');
 const teachResult = $('admin-teach-result');
 const teachFragment = $('admin-teach-fragment');
 const teachBtn = $('admin-teach-run');
+const disputesList = $('admin-disputes-list');
+const disputeDetail = $('admin-dispute-detail');
+const disputeManual = $('admin-dispute-manual');
 
 const storage = await openStorage();
 let session = null;
 let teachRunning = false;
+const disputeStatusRu = {
+  open: 'открыто',
+  resolved_bi_error: 'закрыто: ошибка Би',
+  resolved_examiner_error: 'закрыто: ошибка Экзаменатора',
+  resolved_other: 'закрыто: иное',
+};
 
 function showStatus(text) {
   status.textContent = text;
@@ -82,19 +91,19 @@ function attachRulingForm(card, {
 
   const ta = document.createElement('textarea');
   ta.rows = 4;
-  ta.placeholder = 'В чём ошибка Ученика и/или Экзаменатора, и как правильно (опора на источник)…';
+  ta.placeholder = 'Замечание Создателя (открытый вопрос; окончательный ответ не обязателен)…';
   const src = document.createElement('input');
   src.type = 'text';
-  src.placeholder = 'Опора на источник (необязательно): цитата или код класса';
-  const save = el('button', 'btn btn-primary', 'Сохранить вердикт');
+  src.placeholder = 'Опора на источник (необязательно)';
+  const save = el('button', 'btn btn-primary', 'Сохранить разногласие');
   save.type = 'button';
   const cancel = el('button', 'btn', 'Отмена');
   cancel.type = 'button';
-  const status = el('p', 'note', '');
-  status.hidden = true;
+  const note = el('p', 'note', '');
+  note.hidden = true;
   const actions = el('div', 'admin-teach-ruling-actions');
   actions.append(save, cancel);
-  form.append(ta, src, actions, status);
+  form.append(ta, src, actions, note);
 
   btn.addEventListener('click', () => {
     form.hidden = false;
@@ -104,27 +113,28 @@ function attachRulingForm(card, {
   cancel.addEventListener('click', () => {
     form.hidden = true;
     btn.hidden = false;
-    status.hidden = true;
+    note.hidden = true;
   });
   save.addEventListener('click', () => act(async () => {
     if (!session?.token) return;
     save.disabled = true;
     try {
-      const res = await api.adminTeachRuling(session.token, {
+      const res = await api.adminTeachDispute(session.token, {
         fragmentId,
         taskId,
         taskPrompt,
         pupilAnswer,
         examinerNote,
-        creatorRuling: ta.value,
+        creatorRemark: ta.value,
         sourceRef: src.value,
       });
-      status.textContent = res.note || 'Вердикт сохранён — учтётся при следующем запуске.';
-      status.hidden = false;
+      note.textContent = res.note || 'Разногласие сохранено (open).';
+      note.hidden = false;
       ta.disabled = true;
       src.disabled = true;
       save.hidden = true;
       cancel.hidden = true;
+      await loadDisputes();
     } finally {
       save.disabled = false;
     }
@@ -212,8 +222,8 @@ function renderTeachReport(report) {
     'p',
     'note',
     applied
-      ? `Учтено вердиктов Создателя с прошлых циклов: ${applied}.`
-      : 'Вердиктов Создателя для этого фрагмента пока нет. Если Экзаменатор ошибся — «Не согласен» у задачи; учтётся при следующем запуске.',
+      ? `Учтено разногласий Создателя (open/resolved) с прошлых циклов: ${applied}.`
+      : 'Разногласий для этого фрагмента пока нет. «Не согласен» сразу открывает запись в журнале.',
   ));
 
   teachResult.append(renderRound('Раунд 1', {
@@ -248,12 +258,124 @@ async function loadUsers() {
   $('admin-count').textContent = `(${users.length})`;
 }
 
+async function renderDisputeDetail(id) {
+  if (!session?.token || !disputeDetail) return;
+  const packed = await api.adminTeachDisputeGet(session.token, id);
+  const d = packed.dispute;
+  disputeDetail.hidden = false;
+  disputeDetail.replaceChildren();
+  disputeDetail.append(el('h3', null, `${d.fragmentId} / ${d.taskId || '—'} · ${disputeStatusRu[d.status] || d.status}`));
+  disputeDetail.append(el('p', 'note', `id: ${d.id}`));
+  disputeDetail.append(el('p', null, d.taskPrompt || '—'));
+  disputeDetail.append(el('h4', null, 'Ответ Би'));
+  disputeDetail.append(el('p', null, d.pupilAnswer || '—'));
+  disputeDetail.append(el('h4', null, 'Экзаменатор'));
+  disputeDetail.append(el('p', 'note', d.examinerNote || '—'));
+  disputeDetail.append(el('h4', null, 'История'));
+  for (const m of packed.messages || []) {
+    const line = el('p', 'admin-dispute-msg');
+    line.append(
+      el('strong', null, `${m.role}/${m.kind}: `),
+      document.createTextNode(m.body),
+    );
+    disputeDetail.append(line);
+  }
+
+  if (d.status === 'open') {
+    const talk = document.createElement('textarea');
+    talk.rows = 3;
+    talk.placeholder = 'Реплика Создателя для обсуждения с Би…';
+    const discussBtn = el('button', 'btn btn-primary', 'Обсудить с Би');
+    discussBtn.type = 'button';
+    discussBtn.addEventListener('click', () => act(async () => {
+      discussBtn.disabled = true;
+      try {
+        await api.adminTeachDisputeDiscuss(session.token, {
+          disputeId: d.id,
+          creatorMessage: talk.value,
+        });
+        talk.value = '';
+        await renderDisputeDetail(d.id);
+        await loadDisputes();
+      } finally {
+        discussBtn.disabled = false;
+      }
+    }));
+
+    const formulation = document.createElement('textarea');
+    formulation.rows = 3;
+    formulation.placeholder = 'Подтверждённый вывод для записи в учения (обязателен при закрытии)…';
+    const resolveStatus = document.createElement('select');
+    for (const [value, label] of [
+      ['resolved_bi_error', 'Ошибка Би'],
+      ['resolved_examiner_error', 'Ошибка Экзаменатора'],
+      ['resolved_other', 'Иное объяснение'],
+    ]) {
+      const opt = document.createElement('option');
+      opt.value = value;
+      opt.textContent = label;
+      resolveStatus.append(opt);
+    }
+    const resolveBtn = el('button', 'btn', 'Закрыть разногласие');
+    resolveBtn.type = 'button';
+    resolveBtn.addEventListener('click', () => act(async () => {
+      resolveBtn.disabled = true;
+      try {
+        await api.adminTeachDisputeResolve(session.token, {
+          disputeId: d.id,
+          status: resolveStatus.value,
+          formulation: formulation.value,
+          resolutionNote: formulation.value,
+        });
+        await renderDisputeDetail(d.id);
+        await loadDisputes();
+      } finally {
+        resolveBtn.disabled = false;
+      }
+    }));
+
+    disputeDetail.append(el('h4', null, 'Обсуждение'));
+    disputeDetail.append(talk, discussBtn);
+    disputeDetail.append(el('h4', null, 'Разрешение (только Создатель)'));
+    disputeDetail.append(resolveStatus, formulation, resolveBtn);
+  } else if (d.teachingId) {
+    disputeDetail.append(el('p', 'note', `Учение: ${d.teachingId}`));
+  }
+}
+
+async function loadDisputes() {
+  if (!session?.token || !disputesList) return;
+  const { disputes } = await api.adminTeachDisputes(session.token, {});
+  disputesList.replaceChildren();
+  if (!disputes?.length) {
+    disputesList.append(el('p', 'note', 'Журнал пуст.'));
+    return;
+  }
+  for (const d of disputes) {
+    const card = el('article', 'admin-teach-task');
+    card.append(el(
+      'h4',
+      null,
+      `${d.fragmentId} / ${d.taskId || '—'} · ${disputeStatusRu[d.status] || d.status}`,
+    ));
+    card.append(el('p', 'note', new Date(d.updatedAt || d.createdAt).toLocaleString('ru-RU')));
+    card.append(el('p', null, d.creatorRemark || ''));
+    const openBtn = el('button', 'btn', 'Открыть');
+    openBtn.type = 'button';
+    openBtn.addEventListener('click', () => act(() => renderDisputeDetail(d.id)));
+    card.append(openBtn);
+    disputesList.append(card);
+  }
+}
+
 async function show() {
   const admin = Boolean(session?.user.admin);
   panel.hidden = !admin;
   signedOut.hidden = admin;
-  if (admin) await loadUsers();
-  else if (session) showStatus('Эта учётная запись не администратор, или вход был без passkey с отпечатком, лицом или PIN-кодом.');
+  if (admin) {
+    await loadUsers();
+    await loadDisputes();
+  } else if (session) showStatus('Эта учётная запись не администратор, или вход был без passkey с отпечатком, лицом или PIN-кодом.');
 }
 
 async function act(action) {
@@ -308,6 +430,28 @@ $('admin-logout').addEventListener('click', () => act(async () => {
 }));
 
 teachBtn.addEventListener('click', () => act(runTeachCycle));
+
+$('admin-disputes-refresh')?.addEventListener('click', () => act(loadDisputes));
+
+$('admin-dispute-manual-toggle')?.addEventListener('click', () => {
+  if (!disputeManual) return;
+  disputeManual.hidden = !disputeManual.hidden;
+});
+
+$('admin-dispute-manual-save')?.addEventListener('click', () => act(async () => {
+  if (!session?.token) return;
+  await api.adminTeachDispute(session.token, {
+    fragmentId: $('admin-manual-fragment')?.value || 'F02',
+    taskId: $('admin-manual-task')?.value || '',
+    taskPrompt: $('admin-manual-prompt')?.value || '',
+    pupilAnswer: $('admin-manual-answer')?.value || '',
+    examinerNote: $('admin-manual-examiner')?.value || '',
+    creatorRemark: $('admin-manual-remark')?.value || '',
+  });
+  if (disputeManual) disputeManual.hidden = true;
+  showStatus('Разногласие сохранено в журнал.');
+  await loadDisputes();
+}));
 
 if (!api.configured) {
   showStatus('Сервер Buddy ещё не подключён.');

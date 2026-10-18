@@ -62,7 +62,24 @@ export function createApi(base, fetchImpl = (...args) => fetch(...args)) {
       token,
       body: { fragmentId },
     }),
-    /** Creator disagreement with Examiner — applied on next teach run. */
+    /** Step 6: open dispute (also step-5 /ruling alias). */
+    adminTeachDispute: (token, body) => call('POST', '/admin/teach/dispute', { token, body }),
+    adminTeachDisputes: (token, { fragmentId, status } = {}) => {
+      const q = new URLSearchParams();
+      if (fragmentId) q.set('fragmentId', fragmentId);
+      if (status) q.set('status', status);
+      const qs = q.toString();
+      return call('GET', `/admin/teach/disputes${qs ? `?${qs}` : ''}`, { token });
+    },
+    adminTeachDisputeGet: (token, id) => call(
+      'GET',
+      `/admin/teach/dispute?id=${encodeURIComponent(id)}`,
+      { token },
+    ),
+    adminTeachDisputeMessage: (token, body) => call('POST', '/admin/teach/dispute/message', { token, body }),
+    adminTeachDisputeDiscuss: (token, body) => call('POST', '/admin/teach/dispute/discuss', { token, body }),
+    adminTeachDisputeResolve: (token, body) => call('POST', '/admin/teach/dispute/resolve', { token, body }),
+    /** @deprecated use adminTeachDispute */
     adminTeachRuling: (token, body) => call('POST', '/admin/teach/ruling', { token, body }),
     adminTeachRulings: (token, fragmentId) => call(
       'GET',

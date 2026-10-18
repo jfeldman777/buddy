@@ -3,7 +3,7 @@ import { HttpError } from '../http.js';
 import { chatJson } from '../bi/openai.js';
 import { readNotionPage } from '../notion/readPage.js';
 import { getFragmentSpec, teachDisclaimer } from './fragmentSpecs.js';
-import { listTeachRulings, formatRulingsForExaminer } from './rulings.js';
+import { listTeachDisputes, formatDisputesForExaminer } from './disputes.js';
 import {
   examinerTasksPrompt,
   pupilPrinciplesPrompt,
@@ -146,8 +146,8 @@ export async function runTeachCycle(env, { fragmentId, adminId } = {}) {
   const usages = [];
 
   const source = await loadFragmentSource(env, spec);
-  const priorRulings = await listTeachRulings(env, spec.fragmentId, { limit: 20 });
-  const rulingsBlock = formatRulingsForExaminer(priorRulings);
+  const priorDisputes = await listTeachDisputes(env, { fragmentId: spec.fragmentId, limit: 20 });
+  const rulingsBlock = formatDisputesForExaminer(priorDisputes);
   const methodist = {
     fragmentId: spec.fragmentId,
     title: spec.title,
@@ -289,12 +289,21 @@ export async function runTeachCycle(env, { fragmentId, adminId } = {}) {
       overall_note: String(gradeCall.json.overall_note || '').trim(),
     },
     retest,
-    creatorRulingsApplied: priorRulings.length,
-    creatorRulings: priorRulings.map((r) => ({
-      id: r.id,
-      taskId: r.taskId,
-      creatorRuling: r.creatorRuling,
-      createdAt: r.createdAt,
+    creatorRulingsApplied: priorDisputes.length,
+    creatorDisputesApplied: priorDisputes.length,
+    creatorDisputes: priorDisputes.map((d) => ({
+      id: d.id,
+      taskId: d.taskId,
+      status: d.status,
+      creatorRemark: d.creatorRemark,
+      createdAt: d.createdAt,
+    })),
+    creatorRulings: priorDisputes.map((d) => ({
+      id: d.id,
+      taskId: d.taskId,
+      creatorRuling: d.creatorRemark,
+      createdAt: d.createdAt,
+      status: d.status,
     })),
     callTrace: trace,
     adminId: adminId || null,

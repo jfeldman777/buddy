@@ -16,7 +16,16 @@ import { handleBi } from './bi/routes.js';
 import { readNotionPage, FIRST_CHAPTER_PAGE_ID } from './notion/readPage.js';
 import { readTuaiIntroCorpus } from './notion/readCorpus.js';
 import { runTeachCycle } from './teach/fragmentCycle.js';
-import { createTeachRuling, listTeachRulings } from './teach/rulings.js';
+import {
+  createTeachDispute,
+  listTeachDisputes,
+  getTeachDispute,
+  addDisputeCreatorMessage,
+  discussDisputeWithBi,
+  resolveTeachDispute,
+  createTeachRuling,
+  listTeachRulings,
+} from './teach/disputes.js';
 
 const iso = (env) => new Date(now(env)).toISOString();
 
@@ -253,12 +262,98 @@ const routes = {
     return json(report);
   },
 
-  // Creator disagreement with Examiner — stored for next teach run (not Bi memory).
+  // Step 6: open dispute journal (immediate). Alias step-5 /ruling → same create.
+  'POST /admin/teach/dispute': async (request, env) => {
+    const session = await requireAdmin(request, env);
+    await rateLimit(env, 'LIMIT_USER', session.userId);
+    const body = await request.json().catch(() => ({}));
+    const dispute = await createTeachDispute(env, {
+      fragmentId: body?.fragmentId,
+      taskId: body?.taskId,
+      taskPrompt: body?.taskPrompt,
+      pupilAnswer: body?.pupilAnswer,
+      examinerNote: body?.examinerNote,
+      creatorRemark: body?.creatorRemark || body?.creatorRuling,
+      sourceRef: body?.sourceRef,
+      adminId: session.userId,
+    });
+    await env.DB.prepare('INSERT INTO admin_audit (admin_id, action, created_at) VALUES (?1, ?2, ?3)')
+      .bind(session.userId, `teach_dispute:${dispute.fragmentId}:${dispute.id}`, iso(env)).run();
+    return json({
+      dispute,
+      note: 'Разногласие сохранено со статусом open. Открытый вопрос — не утверждённое знание. Учтётся в следующих учебных циклах фрагмента.',
+    }, 201);
+  },
+
+  'GET /admin/teach/disputes': async (request, env) => {
+    const session = await requireAdmin(request, env);
+    await rateLimit(env, 'LIMIT_USER', session.userId);
+    const url = new URL(request.url);
+    const fragmentId = url.searchParams.get('fragmentId') || '';
+    const status = url.searchParams.get('status') || '';
+    const disputes = await listTeachDisputes(env, {
+      fragmentId: fragmentId || undefined,
+      status: status || undefined,
+    });
+    return json({ disputes });
+  },
+
+  'GET /admin/teach/dispute': async (request, env) => {
+    const session = await requireAdmin(request, env);
+    await rateLimit(env, 'LIMIT_USER', session.userId);
+    const id = new URL(request.url).searchParams.get('id') || '';
+    return json(await getTeachDispute(env, id));
+  },
+
+  'POST /admin/teach/dispute/message': async (request, env) => {
+    const session = await requireAdmin(request, env);
+    await rateLimit(env, 'LIMIT_USER', session.userId);
+    const body = await request.json().catch(() => ({}));
+    const msg = await addDisputeCreatorMessage(env, body?.disputeId, {
+      body: body?.body,
+      kind: body?.kind,
+    });
+    await env.DB.prepare('INSERT INTO admin_audit (admin_id, action, created_at) VALUES (?1, ?2, ?3)')
+      .bind(session.userId, `teach_dispute_msg:${body?.disputeId}`, iso(env)).run();
+    return json({ message: msg }, 201);
+  },
+
+  'POST /admin/teach/dispute/discuss': async (request, env) => {
+    const session = await requireAdmin(request, env);
+    await rateLimit(env, 'LIMIT_USER', session.userId);
+    const body = await request.json().catch(() => ({}));
+    const result = await discussDisputeWithBi(env, body?.disputeId, {
+      creatorMessage: body?.creatorMessage || body?.body,
+    });
+    await env.DB.prepare('INSERT INTO admin_audit (admin_id, action, created_at) VALUES (?1, ?2, ?3)')
+      .bind(session.userId, `teach_dispute_discuss:${body?.disputeId}`, iso(env)).run();
+    return json(result);
+  },
+
+  'POST /admin/teach/dispute/resolve': async (request, env) => {
+    const session = await requireAdmin(request, env);
+    await rateLimit(env, 'LIMIT_USER', session.userId);
+    const body = await request.json().catch(() => ({}));
+    const result = await resolveTeachDispute(env, body?.disputeId, {
+      status: body?.status,
+      resolutionNote: body?.resolutionNote,
+      formulation: body?.formulation,
+      adminId: session.userId,
+    });
+    await env.DB.prepare('INSERT INTO admin_audit (admin_id, action, created_at) VALUES (?1, ?2, ?3)')
+      .bind(session.userId, `teach_dispute_resolve:${body?.disputeId}:${body?.status}`, iso(env)).run();
+    return json({
+      ...result,
+      note: 'Разногласие закрыто Создателем. Подтверждённый вывод записан в bi_teachings.',
+    });
+  },
+
+  // Step-5 aliases
   'POST /admin/teach/ruling': async (request, env) => {
     const session = await requireAdmin(request, env);
     await rateLimit(env, 'LIMIT_USER', session.userId);
     const body = await request.json().catch(() => ({}));
-    const ruling = await createTeachRuling(env, {
+    const dispute = await createTeachRuling(env, {
       fragmentId: body?.fragmentId,
       taskId: body?.taskId,
       taskPrompt: body?.taskPrompt,
@@ -269,10 +364,14 @@ const routes = {
       adminId: session.userId,
     });
     await env.DB.prepare('INSERT INTO admin_audit (admin_id, action, created_at) VALUES (?1, ?2, ?3)')
-      .bind(session.userId, `teach_ruling:${ruling.fragmentId}:${ruling.id}`, iso(env)).run();
+      .bind(session.userId, `teach_dispute:${dispute.fragmentId}:${dispute.id}`, iso(env)).run();
     return json({
-      ruling,
-      note: 'Вердикт сохранён. Учтётся при следующем запуске обучения этого фрагмента. В память Би не записан.',
+      ruling: {
+        ...dispute,
+        creatorRuling: dispute.creatorRemark,
+      },
+      dispute,
+      note: 'Разногласие сохранено (open). Не утверждённое знание до закрытия Создателем.',
     }, 201);
   },
 
