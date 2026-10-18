@@ -4,7 +4,7 @@ import { createEnv, registerWithPasskey, loginWithPasskey } from './harness.mjs'
 import { createAuthenticator } from './authenticator.mjs';
 import { NOTION_API } from '../src/notion/readPage.js';
 import { getFragmentSpec, DEFAULT_CHAIN_IDS } from '../src/teach/fragmentSpecs.js';
-import { getApprovedChainIds } from '../src/teach/chain.js';
+import { getApprovedChainIds, TECH_AUTO_RETRIES } from '../src/teach/chain.js';
 
 async function asAdmin(api) {
   const passkey = await createAuthenticator();
@@ -15,7 +15,11 @@ async function asAdmin(api) {
   return { token: login.data.session.token, userId: login.data.user.id };
 }
 
-function installCycleMocks(api) {
+/** @param {{ badGradeCallsRemaining?: number }} [opts] fail grading N times (empty source_ref), then ok */
+function installCycleMocks(api, opts = {}) {
+  const state = {
+    badGradeCallsRemaining: Number(opts.badGradeCallsRemaining) || 0,
+  };
   const realFetch = api.env.FETCH;
   api.env.FETCH = async (url, init) => {
     const href = String(url);
@@ -74,17 +78,32 @@ function installCycleMocks(api) {
           ],
         };
       } else if (/Оцените решения Ученика/i.test(system) || /повторном испытании/i.test(system)) {
-        content = {
-          grades: [1, 2, 3].map((n) => ({
-            task_id: `t${n}`,
-            letter: { pass: true, certain: true, justification: 'ok', source_ref: 'src' },
-            spirit: null,
-            error_summary: '',
-          })),
-          needs_retest: false,
-          retest_tasks: [],
-          overall_note: 'ok',
-        };
+        if (state.badGradeCallsRemaining > 0) {
+          state.badGradeCallsRemaining -= 1;
+          content = {
+            grades: [1, 2, 3].map((n) => ({
+              task_id: `t${n}`,
+              letter: { pass: true, certain: true, justification: '', source_ref: '' },
+              spirit: null,
+              error_summary: '',
+            })),
+            needs_retest: false,
+            retest_tasks: [],
+            overall_note: 'bad',
+          };
+        } else {
+          content = {
+            grades: [1, 2, 3].map((n) => ({
+              task_id: `t${n}`,
+              letter: { pass: true, certain: true, justification: 'ok', source_ref: 'src' },
+              spirit: null,
+              error_summary: '',
+            })),
+            needs_retest: false,
+            retest_tasks: [],
+            overall_note: 'ok',
+          };
+        }
       }
       return Response.json({
         choices: [{ message: { content: JSON.stringify(content) } }],
@@ -93,6 +112,7 @@ function installCycleMocks(api) {
     }
     return realFetch(url, init);
   };
+  return state;
 }
 
 test('approved chain is F01–F15', () => {
@@ -176,4 +196,87 @@ test('chain completes short list', async () => {
   assert.equal(step.data.run.status, 'completed');
   assert.equal(step.data.stopped, false);
   assert.equal(step.data.run.results.length, 1);
+});
+
+test('tech fail: автоповтор того же блока, затем успех без рестарта цепочки', async () => {
+  const api = await createEnv();
+  api.env.OPENAI_API_KEY = 'test-key';
+  api.env.NOTION_TOKEN = 'test-notion-token-placeholder';
+  installCycleMocks(api, { badGradeCallsRemaining: 2 });
+  const { token } = await asAdmin(api);
+
+  const started = await api.call('POST', '/admin/teach/chain/start', {
+    token,
+    body: { fragmentIds: ['F01'] },
+  });
+  const id = started.data.run.id;
+
+  const r1 = await api.call('POST', '/admin/teach/chain/continue', { token, body: { runId: id } });
+  assert.equal(r1.status, 200, JSON.stringify(r1.data));
+  assert.equal(r1.data.stopped, false);
+  assert.equal(r1.data.stopKind, 'technical_retry');
+  assert.equal(r1.data.run.status, 'running');
+  assert.equal(r1.data.run.cursorIndex, 0);
+  assert.equal(r1.data.techAttempt, 1);
+
+  const r2 = await api.call('POST', '/admin/teach/chain/continue', { token, body: { runId: id } });
+  assert.equal(r2.data.stopKind, 'technical_retry');
+  assert.equal(r2.data.techAttempt, 2);
+  assert.equal(r2.data.run.cursorIndex, 0);
+
+  const r3 = await api.call('POST', '/admin/teach/chain/continue', { token, body: { runId: id } });
+  assert.equal(r3.data.stopped, false);
+  assert.equal(r3.data.run.status, 'completed');
+  assert.equal(r3.data.run.cursorIndex, 1);
+  assert.ok(r3.data.report);
+});
+
+test('tech fail: после лимита пауза; start продолжает с того же блока (префикс сохранён)', async () => {
+  const api = await createEnv();
+  api.env.OPENAI_API_KEY = 'test-key';
+  api.env.NOTION_TOKEN = 'test-notion-token-placeholder';
+  const state = installCycleMocks(api, { badGradeCallsRemaining: 99 });
+  const { token } = await asAdmin(api);
+
+  const started = await api.call('POST', '/admin/teach/chain/start', {
+    token,
+    body: { fragmentIds: ['F01', 'F02'] },
+  });
+  const id = started.data.run.id;
+
+  // F01 passes
+  state.badGradeCallsRemaining = 0;
+  const ok1 = await api.call('POST', '/admin/teach/chain/continue', { token, body: { runId: id } });
+  assert.equal(ok1.data.stopped, false);
+  assert.equal(ok1.data.run.cursorIndex, 1);
+  assert.equal(ok1.data.report.fragmentId, 'F01');
+
+  // F02 tech-fails until retry limit
+  state.badGradeCallsRemaining = 99;
+  let last;
+  for (let i = 0; i < TECH_AUTO_RETRIES; i += 1) {
+    last = await api.call('POST', '/admin/teach/chain/continue', { token, body: { runId: id } });
+  }
+  assert.equal(last.data.stopped, true);
+  assert.equal(last.data.stopKind, 'technical');
+  assert.equal(last.data.run.status, 'paused');
+  assert.equal(last.data.run.cursorIndex, 1);
+  assert.match(last.data.run.pauseReason, /ТЕХСБОЙ · F02/);
+
+  // New «start» without forceNew → resume same run at F02; F01 not re-run
+  state.badGradeCallsRemaining = 0;
+  const resume = await api.call('POST', '/admin/teach/chain/start', { token, body: {} });
+  assert.equal(resume.status, 200, JSON.stringify(resume.data));
+  assert.equal(resume.data.run.resumed, true);
+  assert.equal(resume.data.run.id, id);
+  assert.equal(resume.data.run.resumeFrom, 'F02');
+  assert.deepEqual(resume.data.run.carriedPrefix, ['F01']);
+  assert.equal(resume.data.run.cursorIndex, 1);
+  assert.equal(resume.data.run.status, 'running');
+
+  const done = await api.call('POST', '/admin/teach/chain/continue', { token, body: { runId: id } });
+  assert.equal(done.data.report.fragmentId, 'F02');
+  assert.equal(done.data.run.status, 'completed');
+  const passes = done.data.run.results.filter((r) => r.status === 'experimental_preliminary_pass');
+  assert.equal(passes.length, 2);
 });

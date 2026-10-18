@@ -420,16 +420,18 @@ function showChainStatus(text) {
 function formatChainOutcome(run, stopKind) {
   const results = run.results || [];
   const passed = results.filter((r) => r.status === 'experimental_preliminary_pass').map((r) => r.fragmentId);
-  const last = results[results.length - 1];
+  const last = [...results].reverse().find((r) => r.status === 'error' || r.status === 'experimental_preliminary_fail' || r.status === 'experimental_preliminary_pass') || results[results.length - 1];
   const kind = stopKind
     || last?.stopKind
     || (run.status === 'failed' || last?.status === 'error' ? 'technical'
       : run.status === 'paused' && /разноглас/i.test(run.pauseReason || '') ? 'open_dispute'
-        : run.status === 'paused' ? 'pupil_fail'
-          : run.status === 'completed' ? 'completed' : 'other');
+        : run.status === 'paused' && /ТЕХСБОЙ/i.test(run.pauseReason || '') ? 'technical'
+          : run.status === 'paused' ? 'pupil_fail'
+            : run.status === 'completed' ? 'completed' : 'other');
 
   const kindRu = {
-    technical: 'техсбой (Экзаменатор/источник, не оценка Ученика)',
+    technical: 'техсбой (Экзаменатор/источник) — префикс сохранён, следующий запуск продолжит с этого блока',
+    technical_retry: 'автоповтор того же блока',
     pupil_fail: 'провал учения (Экзаменатор не зачёл буква/дух)',
     open_dispute: 'пауза из‑за открытого разногласия в журнале',
     completed: 'цепочка завершена',
@@ -440,6 +442,9 @@ function formatChainOutcome(run, stopKind) {
     `Итог: ${run.status === 'completed' ? 'готово' : 'остановлена'} · причина: ${kindRu}`,
   ];
   if (run.pauseReason) lines.push(run.pauseReason);
+  if (run.resumed && run.resumeFrom) {
+    lines.push(`Продолжение с ${run.resumeFrom} (начало цепочки не перепрогонялось).`);
+  }
   if (passed.length) lines.push(`Успешно пройдены: ${passed.join(', ')}.`);
   if (last?.status === 'error') {
     lines.push(`Сломался фрагмент: ${last.fragmentId} (${last.error || 'error'}).`);
@@ -458,17 +463,29 @@ async function runTeachChain() {
   if (teachFragment) teachFragment.disabled = true;
   teachResult.hidden = true;
   teachResult.replaceChildren();
-  showTeachStatus('Старт цепочки F01–F15…');
+  showTeachStatus('Цепочка F01–F15: старт или продолжение с последнего непройденного…');
   showChainStatus('');
   try {
     const { run } = await api.adminTeachChainStart(session.token, {});
     let current = run;
     let lastReport = null;
     let lastStopKind = null;
+    if (run.resumed && run.resumeFrom) {
+      const prefix = (run.carriedPrefix || []).join(', ') || 'префикс сохранён';
+      showChainStatus(`Продолжаем с ${run.resumeFrom}. Уже зачтено без перепрогона: ${prefix}.`);
+    }
     while (current.status === 'running' && current.nextFragmentId) {
-      showTeachStatus(`Цепочка: выполняется ${current.nextFragmentId} (${current.cursorIndex + 1}/${current.fragmentIds.length})…`);
+      const label = current.pauseReason?.startsWith('АВТОПОВТОР')
+        ? current.pauseReason
+        : `Цепочка: выполняется ${current.nextFragmentId} (${current.cursorIndex + 1}/${current.fragmentIds.length})…`;
+      showTeachStatus(label);
       const step = await api.adminTeachChainContinue(session.token, current.id);
       current = step.run;
+      if (step.stopKind === 'technical_retry') {
+        lastStopKind = 'technical_retry';
+        showChainStatus(step.run.pauseReason || `Автоповтор ${step.techAttempt}/${step.techRetryLimit}`);
+        continue;
+      }
       lastStopKind = step.stopKind || lastStopKind;
       if (step.report) {
         lastReport = step.report;
@@ -487,10 +504,13 @@ async function runTeachChain() {
     } else if (lastStopKind === 'technical' || lastStopKind === 'open_dispute' || current.status === 'failed' || current.status === 'paused') {
       teachResult.replaceChildren();
       teachResult.hidden = false;
+      const techHint = lastStopKind === 'technical'
+        ? ' Техсбой: Создателя звать не нужно — снова «Запустить цепочку» продолжит с этого блока.'
+        : '';
       teachResult.append(el(
         'p',
         'admin-teach-disclaimer',
-        'Отчёта экзамена по остановившему фрагменту нет: цепочка встала до итоговой оценки Ученика (см. причину выше). Ниже не показываем чужой успешный фрагмент, чтобы не путать.',
+        `Отчёта экзамена по остановившему фрагменту нет: цепочка встала до итоговой оценки Ученика (см. причину выше).${techHint}`,
       ));
     }
   } catch (error) {

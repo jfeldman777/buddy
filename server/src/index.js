@@ -399,10 +399,14 @@ const routes = {
     const run = await startTeachChain(env, {
       adminId: session.userId,
       fragmentIds: body?.fragmentIds,
+      forceNew: body?.forceNew === true,
     });
+    const audit = run.resumed
+      ? `teach_chain_resume:${run.id}:${run.resumeFrom || ''}`
+      : `teach_chain_start:${run.id}`;
     await env.DB.prepare('INSERT INTO admin_audit (admin_id, action, created_at) VALUES (?1, ?2, ?3)')
-      .bind(session.userId, `teach_chain_start:${run.id}`, iso(env)).run();
-    return json({ run }, 201);
+      .bind(session.userId, audit, iso(env)).run();
+    return json({ run }, run.resumed ? 200 : 201);
   },
 
   'POST /admin/teach/chain/continue': async (request, env) => {

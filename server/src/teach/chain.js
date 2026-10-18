@@ -4,6 +4,9 @@ import { DEFAULT_CHAIN_IDS, getFragmentSpec } from './fragmentSpecs.js';
 import { runTeachCycle } from './fragmentCycle.js';
 import { listTeachDisputes } from './disputes.js';
 
+/** Auto-retries of the same fragment on Examiner/source tech errors (no Creator, no chain restart). */
+export const TECH_AUTO_RETRIES = 3;
+
 function nowIso() {
   return new Date().toISOString();
 }
@@ -40,6 +43,41 @@ function withNext(run) {
   return { ...run, nextFragmentId: next };
 }
 
+/** Trailing tech failures for fragment since last pass/resume marker. */
+function countOpenTechAttempts(run, fragmentId) {
+  let n = 0;
+  for (let i = (run.results || []).length - 1; i >= 0; i -= 1) {
+    const r = run.results[i];
+    if (r.fragmentId !== fragmentId) break;
+    if (r.status === 'error' && (r.stopKind === 'technical' || !r.stopKind)) n += 1;
+    else break;
+  }
+  return n;
+}
+
+function lastResult(run) {
+  const results = run.results || [];
+  return results.length ? results[results.length - 1] : null;
+}
+
+/** Tech pause/fail: Creator not needed; same cursor can resume. */
+export function isTechnicalStop(run) {
+  if (!run) return false;
+  if (run.status === 'failed') return true;
+  if (run.status !== 'paused') return false;
+  const last = lastResult(run);
+  if (last?.stopKind === 'technical') return true;
+  return /^ТЕХСБОЙ/i.test(run.pauseReason || '');
+}
+
+function isCreatorGateStop(run) {
+  if (!run || run.status !== 'paused') return false;
+  if (isTechnicalStop(run)) return false;
+  const last = lastResult(run);
+  if (last?.stopKind === 'open_dispute' || last?.stopKind === 'pupil_fail') return true;
+  return /разноглас|ПРОВАЛ УЧЕНИЯ/i.test(run.pauseReason || '');
+}
+
 async function loadRun(env, runId) {
   const id = String(runId || '').trim();
   if (!id) throw new HttpError(400, 'teach_chain_id', 'Нужен id цепочки.');
@@ -69,10 +107,72 @@ export function getApprovedChainIds() {
   return [...DEFAULT_CHAIN_IDS];
 }
 
-export async function startTeachChain(env, { adminId, fragmentIds } = {}) {
-  const ids = Array.isArray(fragmentIds) && fragmentIds.length
+/**
+ * Latest incomplete run that can resume from cursor without re-running passed prefix.
+ * Only technical stops (not pupil fail / open dispute).
+ */
+async function findResumableTechRun(env, adminId) {
+  const { results } = await env.DB.prepare(
+    `SELECT * FROM teach_chain_runs
+     WHERE admin_id = ?1 AND status IN ('failed', 'paused', 'running')
+     ORDER BY updated_at DESC LIMIT 10`,
+  ).bind(String(adminId || '')).all();
+
+  for (const row of results || []) {
+    const run = withNext(mapRun(row));
+    if (run.cursorIndex >= (run.fragmentIds || []).length) continue;
+    if (run.status === 'running' && run.nextFragmentId) {
+      // Abandoned in-flight: continue same cursor (prefix already in results).
+      return run;
+    }
+    if (isTechnicalStop(run) && !isCreatorGateStop(run)) return run;
+  }
+  return null;
+}
+
+function markTechResume(run, fragmentId) {
+  run.results.push({
+    fragmentId,
+    status: 'tech_resume',
+    stopKind: 'technical_resume',
+    at: nowIso(),
+  });
+}
+
+/**
+ * Start a new chain, or economically resume the last tech-stopped run
+ * (prefix F01… already passed stays attached; cursor stays on first unfinished).
+ */
+export async function startTeachChain(env, { adminId, fragmentIds, forceNew = false } = {}) {
+  const admin = String(adminId || '');
+  if (!admin) throw new HttpError(401, 'unauthorized', 'Нужен администратор.');
+
+  const customIds = Array.isArray(fragmentIds) && fragmentIds.length
     ? fragmentIds.map((x) => getFragmentSpec(x).fragmentId)
-    : getApprovedChainIds();
+    : null;
+
+  if (!forceNew && !customIds) {
+    const existing = await findResumableTechRun(env, admin);
+    if (existing) {
+      const frag = existing.fragmentIds[existing.cursorIndex];
+      if (isTechnicalStop(existing) || existing.status !== 'running') {
+        markTechResume(existing, frag);
+      }
+      existing.status = 'running';
+      existing.pauseReason = '';
+      existing.updatedAt = nowIso();
+      await saveRun(env, existing);
+      return {
+        ...withNext(existing),
+        resumed: true,
+        resumeFrom: frag,
+        carriedPrefix: (existing.results || []).filter((r) => r.status === 'experimental_preliminary_pass')
+          .map((r) => r.fragmentId),
+      };
+    }
+  }
+
+  const ids = customIds || getApprovedChainIds();
   for (const id of ids) getFragmentSpec(id);
 
   const run = {
@@ -83,11 +183,11 @@ export async function startTeachChain(env, { adminId, fragmentIds } = {}) {
     cursorIndex: 0,
     fragmentIds: ids,
     results: [],
-    adminId: String(adminId || ''),
+    adminId: admin,
     createdAt: nowIso(),
     updatedAt: nowIso(),
+    resumed: false,
   };
-  if (!run.adminId) throw new HttpError(401, 'unauthorized', 'Нужен администратор.');
 
   await env.DB.prepare(
     `INSERT INTO teach_chain_runs
@@ -121,20 +221,33 @@ export async function listTeachChains(env, { limit = 20 } = {}) {
 }
 
 /**
- * Run exactly one next fragment. Stops chain on fail / open dispute / source error.
+ * Run exactly one next fragment.
+ * Tech errors: auto-retry same cursor (no Creator). Pupil fail / open dispute: pause for Creator.
  */
 export async function continueTeachChain(env, runId, { adminId } = {}) {
-  const run = await loadRun(env, runId);
+  let run = await loadRun(env, runId);
+
   if (run.status === 'completed') {
     return { run, report: null, stopped: false };
   }
-  if (run.status === 'paused' || run.status === 'failed') {
+
+  // Economical resume: tech-stopped run continues from same cursor (prefix kept).
+  if (isTechnicalStop(run)) {
+    const frag = run.fragmentIds[run.cursorIndex];
+    markTechResume(run, frag);
+    run.status = 'running';
+    run.pauseReason = '';
+    run.updatedAt = nowIso();
+    await saveRun(env, run);
+    run = withNext(run);
+  } else if (run.status === 'paused' || run.status === 'failed') {
     throw new HttpError(
       409,
       'teach_chain_paused',
-      run.pauseReason || 'Цепочка на паузе. Создатель должен разобрать причину и начать новый прогон.',
+      run.pauseReason || 'Цепочка на паузе. Нужно действие Создателя (разногласие или провал учения), затем новый прогон или продолжение после закрытия журнала.',
     );
   }
+
   if (run.status !== 'running') {
     throw new HttpError(409, 'teach_chain_bad_status', `Статус цепочки: ${run.status}`);
   }
@@ -167,24 +280,54 @@ export async function continueTeachChain(env, runId, { adminId } = {}) {
   } catch (err) {
     const code = err?.code || 'error';
     const message = err?.message || String(err);
-    run.status = 'failed';
-    run.pauseReason = [
-      `ТЕХСБОЙ · ${fragmentId}`,
-      `Экзаменатор/чтение источника сбойнули до итоговой оценки Ученика (${code}).`,
-      message,
-      'Это не «провал по букве/духу» и не старое разногласие. Просто запустите цепочку или фрагмент снова.',
-    ].join(' ');
+    const attempt = countOpenTechAttempts(run, fragmentId) + 1;
     run.results.push({
       fragmentId,
       status: 'error',
       stopKind: 'technical',
       error: code,
       message,
+      attempt,
       at: nowIso(),
     });
     run.updatedAt = nowIso();
+
+    if (attempt < TECH_AUTO_RETRIES) {
+      // Stay on same cursor; client/loop continues — no Creator, no chain restart.
+      run.status = 'running';
+      run.pauseReason = [
+        `АВТОПОВТОР · ${fragmentId}`,
+        `техсбой ${attempt}/${TECH_AUTO_RETRIES} (${code}): ${message}`,
+        'Префикс цепочки сохранён; повторяем только этот блок.',
+      ].join(' ');
+      await saveRun(env, run);
+      return {
+        run: withNext(run),
+        report: null,
+        stopped: false,
+        stopKind: 'technical_retry',
+        techAttempt: attempt,
+        techRetryLimit: TECH_AUTO_RETRIES,
+      };
+    }
+
+    run.status = 'paused';
+    run.pauseReason = [
+      `ТЕХСБОЙ · ${fragmentId}`,
+      `Автоповторы ${TECH_AUTO_RETRIES}/${TECH_AUTO_RETRIES} исчерпаны (${code}).`,
+      message,
+      'Создателя звать не нужно. Следующий запуск цепочки продолжит с этого блока; уже пройденный префикс не перепрогоняется.',
+    ].join(' ');
     await saveRun(env, run);
-    return { run: withNext(run), report: null, stopped: true, stopKind: 'technical', error: err };
+    return {
+      run: withNext(run),
+      report: null,
+      stopped: true,
+      stopKind: 'technical',
+      techAttempt: attempt,
+      techRetryLimit: TECH_AUTO_RETRIES,
+      error: err,
+    };
   }
 
   run.results.push({
@@ -195,6 +338,7 @@ export async function continueTeachChain(env, runId, { adminId } = {}) {
     at: nowIso(),
   });
   run.cursorIndex += 1;
+  run.pauseReason = '';
   run.updatedAt = nowIso();
 
   if (report.status === 'experimental_preliminary_fail') {
@@ -232,4 +376,11 @@ export async function continueTeachChain(env, runId, { adminId } = {}) {
   return { run: withNext(run), report, stopped: false };
 }
 
-export const __test = { mapRun, withNext, getApprovedChainIds };
+export const __test = {
+  mapRun,
+  withNext,
+  getApprovedChainIds,
+  countOpenTechAttempts,
+  isTechnicalStop,
+  TECH_AUTO_RETRIES,
+};
