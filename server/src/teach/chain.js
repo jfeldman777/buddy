@@ -151,28 +151,40 @@ export async function continueTeachChain(env, runId, { adminId } = {}) {
   const open = await listTeachDisputes(env, { fragmentId, status: 'open', limit: 5 });
   if (open.length) {
     run.status = 'paused';
-    run.pauseReason = `Открытое разногласие по ${fragmentId} (${open.length}). Разберите в журнале, затем новый прогон.`;
+    run.pauseReason = [
+      `ПАУЗА · разногласие · ${fragmentId}`,
+      `В журнале ${open.length} открытое(ых) разногласие(й) по этому фрагменту.`,
+      'Цепочка не запускала экзамен. Закройте запись в журнале, затем новый прогон.',
+    ].join(' ');
     run.updatedAt = nowIso();
     await saveRun(env, run);
-    return { run: withNext(run), report: null, stopped: true };
+    return { run: withNext(run), report: null, stopped: true, stopKind: 'open_dispute' };
   }
 
   let report;
   try {
     report = await runTeachCycle(env, { fragmentId, adminId: adminId || run.adminId });
   } catch (err) {
+    const code = err?.code || 'error';
+    const message = err?.message || String(err);
     run.status = 'failed';
-    run.pauseReason = err?.message || String(err);
+    run.pauseReason = [
+      `ТЕХСБОЙ · ${fragmentId}`,
+      `Экзаменатор/чтение источника сбойнули до итоговой оценки Ученика (${code}).`,
+      message,
+      'Это не «провал по букве/духу» и не старое разногласие. Просто запустите цепочку или фрагмент снова.',
+    ].join(' ');
     run.results.push({
       fragmentId,
       status: 'error',
-      error: err?.code || 'error',
-      message: err?.message || String(err),
+      stopKind: 'technical',
+      error: code,
+      message,
       at: nowIso(),
     });
     run.updatedAt = nowIso();
     await saveRun(env, run);
-    return { run: withNext(run), report: null, stopped: true, error: err };
+    return { run: withNext(run), report: null, stopped: true, stopKind: 'technical', error: err };
   }
 
   run.results.push({
@@ -187,9 +199,15 @@ export async function continueTeachChain(env, runId, { adminId } = {}) {
 
   if (report.status === 'experimental_preliminary_fail') {
     run.status = 'paused';
-    run.pauseReason = `${fragmentId}: предварительный провал (буква/дух). Разберите и при необходимости откройте разногласие.`;
+    run.pauseReason = [
+      `ПРОВАЛ УЧЕНИЯ · ${fragmentId}`,
+      'Экзаменатор не зачёл фрагмент (буква/дух: меньше 2 успешных задач из 3).',
+      'Смотрите отчёт ниже. Если согласны с Экзаменатором — журнал не нужен; повторите фрагмент позже.',
+      '«Не согласен» — только если не согласны с оценкой Экзаменатора.',
+    ].join(' ');
+    run.results[run.results.length - 1].stopKind = 'pupil_fail';
     await saveRun(env, run);
-    return { run: withNext(run), report, stopped: true };
+    return { run: withNext(run), report, stopped: true, stopKind: 'pupil_fail' };
   }
 
   // Fresh open disputes created mid-cycle shouldn't happen (cycle doesn't create them),
@@ -197,9 +215,12 @@ export async function continueTeachChain(env, runId, { adminId } = {}) {
   const openAfter = await listTeachDisputes(env, { fragmentId, status: 'open', limit: 5 });
   if (openAfter.length) {
     run.status = 'paused';
-    run.pauseReason = `${fragmentId}: есть открытые разногласия после цикла.`;
+    run.pauseReason = [
+      `ПАУЗА · разногласие · ${fragmentId}`,
+      'После цикла в журнале есть открытые разногласия. Закройте их, затем новый прогон.',
+    ].join(' ');
     await saveRun(env, run);
-    return { run: withNext(run), report, stopped: true };
+    return { run: withNext(run), report, stopped: true, stopKind: 'open_dispute' };
   }
 
   if (run.cursorIndex >= run.fragmentIds.length) {

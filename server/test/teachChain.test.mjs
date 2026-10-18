@@ -153,7 +153,8 @@ test('chain start + continue: два шага, стоп на open dispute', asyn
   assert.equal(step2.status, 200, JSON.stringify(step2.data));
   assert.equal(step2.data.stopped, true);
   assert.equal(step2.data.run.status, 'paused');
-  assert.match(step2.data.run.pauseReason, /Открытое разногласие|F02/);
+  assert.equal(step2.data.stopKind, 'open_dispute');
+  assert.match(step2.data.run.pauseReason, /разногласие|F02/i);
   assert.equal(step2.data.report, null);
 });
 

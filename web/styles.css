@@ -768,6 +768,13 @@ body.chat-open footer {
   margin: 0.75rem 0;
 }
 
+#admin-teach-chain-status {
+  white-space: pre-wrap;
+  margin: 0.75rem 0;
+  padding: 0.65rem 0.75rem;
+  border-left: 3px solid color-mix(in srgb, currentColor 35%, transparent);
+}
+
 .admin-teach-label {
   display: flex;
   flex-direction: column;

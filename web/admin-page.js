@@ -417,6 +417,39 @@ function showChainStatus(text) {
   teachChainStatus.hidden = !text;
 }
 
+function formatChainOutcome(run, stopKind) {
+  const results = run.results || [];
+  const passed = results.filter((r) => r.status === 'experimental_preliminary_pass').map((r) => r.fragmentId);
+  const last = results[results.length - 1];
+  const kind = stopKind
+    || last?.stopKind
+    || (run.status === 'failed' || last?.status === 'error' ? 'technical'
+      : run.status === 'paused' && /разноглас/i.test(run.pauseReason || '') ? 'open_dispute'
+        : run.status === 'paused' ? 'pupil_fail'
+          : run.status === 'completed' ? 'completed' : 'other');
+
+  const kindRu = {
+    technical: 'техсбой (Экзаменатор/источник, не оценка Ученика)',
+    pupil_fail: 'провал учения (Экзаменатор не зачёл буква/дух)',
+    open_dispute: 'пауза из‑за открытого разногласия в журнале',
+    completed: 'цепочка завершена',
+    other: run.status,
+  }[kind] || kind;
+
+  const lines = [
+    `Итог: ${run.status === 'completed' ? 'готово' : 'остановлена'} · причина: ${kindRu}`,
+  ];
+  if (run.pauseReason) lines.push(run.pauseReason);
+  if (passed.length) lines.push(`Успешно пройдены: ${passed.join(', ')}.`);
+  if (last?.status === 'error') {
+    lines.push(`Сломался фрагмент: ${last.fragmentId} (${last.error || 'error'}).`);
+  }
+  if (last?.status === 'experimental_preliminary_fail') {
+    lines.push(`Не зачтён фрагмент: ${last.fragmentId}. Отчёт этого фрагмента — ниже.`);
+  }
+  return lines.join('\n');
+}
+
 async function runTeachChain() {
   if (!session?.token || teachRunning) return;
   teachRunning = true;
@@ -431,10 +464,12 @@ async function runTeachChain() {
     const { run } = await api.adminTeachChainStart(session.token, {});
     let current = run;
     let lastReport = null;
+    let lastStopKind = null;
     while (current.status === 'running' && current.nextFragmentId) {
       showTeachStatus(`Цепочка: выполняется ${current.nextFragmentId} (${current.cursorIndex + 1}/${current.fragmentIds.length})…`);
       const step = await api.adminTeachChainContinue(session.token, current.id);
       current = step.run;
+      lastStopKind = step.stopKind || lastStopKind;
       if (step.report) {
         lastReport = step.report;
         renderTeachReport(step.report);
@@ -442,13 +477,22 @@ async function runTeachChain() {
       if (step.stopped) break;
     }
     showTeachStatus('');
-    const summary = (current.results || []).map((r) => `${r.fragmentId}:${r.status}`).join(', ');
-    showChainStatus(
-      `Цепочка ${current.status}`
-      + (current.pauseReason ? ` — ${current.pauseReason}` : '')
-      + (summary ? ` | ${summary}` : ''),
-    );
-    if (lastReport) renderTeachReport(lastReport);
+    showChainStatus(formatChainOutcome(current, lastStopKind));
+    // Only keep a fragment report when it explains the stop (pupil fail) or the chain finished.
+    // Tech/dispute stops have no grading report — clearing avoids showing the previous fragment's exam.
+    if (lastStopKind === 'pupil_fail' && lastReport) {
+      renderTeachReport(lastReport);
+    } else if (current.status === 'completed' && lastReport) {
+      renderTeachReport(lastReport);
+    } else if (lastStopKind === 'technical' || lastStopKind === 'open_dispute' || current.status === 'failed' || current.status === 'paused') {
+      teachResult.replaceChildren();
+      teachResult.hidden = false;
+      teachResult.append(el(
+        'p',
+        'admin-teach-disclaimer',
+        'Отчёта экзамена по остановившему фрагменту нет: цепочка встала до итоговой оценки Ученика (см. причину выше). Ниже не показываем чужой успешный фрагмент, чтобы не путать.',
+      ));
+    }
   } catch (error) {
     console.warn(error);
     showTeachStatus(error.message || 'Цепочку не удалось выполнить.');
