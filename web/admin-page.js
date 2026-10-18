@@ -12,7 +12,8 @@ const panel = $('admin-panel');
 const rows = $('admin-users');
 const teachStatus = $('admin-teach-status');
 const teachResult = $('admin-teach-result');
-const teachBtn = $('admin-teach-f01');
+const teachFragment = $('admin-teach-fragment');
+const teachBtn = $('admin-teach-run');
 
 const storage = await openStorage();
 let session = null;
@@ -116,7 +117,9 @@ function renderTeachReport(report) {
     document.createTextNode(teachLabels[report.status] || report.status || '—'),
   );
   teachResult.append(statusLine);
-  teachResult.append(el('p', 'note', `Цель F01: ${report.methodist?.learningGoal || '—'}`));
+  const frag = report.fragmentId || report.methodist?.fragmentId || '—';
+  teachResult.append(el('p', 'note', `${frag} · ${report.methodist?.title || ''}`));
+  teachResult.append(el('p', 'note', `Цель: ${report.methodist?.learningGoal || '—'}`));
   teachResult.append(el(
     'p',
     'note',
@@ -173,23 +176,26 @@ async function act(action) {
   }
 }
 
-async function runTeachF01() {
+async function runTeachCycle() {
   if (!session?.token || teachRunning) return;
+  const fragmentId = teachFragment?.value || 'F01';
   teachRunning = true;
   teachBtn.disabled = true;
+  if (teachFragment) teachFragment.disabled = true;
   teachResult.hidden = true;
   teachResult.replaceChildren();
-  showTeachStatus('Эксперимент F01 выполняется (несколько вызовов модели, обычно 1–3 минуты)…');
+  showTeachStatus(`Обучение ${fragmentId} выполняется (несколько вызовов модели, обычно 1–3 минуты)…`);
   try {
-    const report = await api.adminTeachF01Run(session.token);
+    const report = await api.adminTeachRun(session.token, fragmentId);
     showTeachStatus('');
     renderTeachReport(report);
   } catch (error) {
     console.warn(error);
-    showTeachStatus(error.message || 'Эксперимент не удалось выполнить.');
+    showTeachStatus(error.message || 'Обучение не удалось выполнить.');
   } finally {
     teachRunning = false;
     teachBtn.disabled = false;
+    if (teachFragment) teachFragment.disabled = false;
   }
 }
 
@@ -211,7 +217,7 @@ $('admin-logout').addEventListener('click', () => act(async () => {
   await show();
 }));
 
-teachBtn.addEventListener('click', () => act(runTeachF01));
+teachBtn.addEventListener('click', () => act(runTeachCycle));
 
 if (!api.configured) {
   showStatus('Сервер Buddy ещё не подключён.');

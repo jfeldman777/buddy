@@ -1,24 +1,28 @@
-// Prompts for Buddy-018 F01 experimental cycle. Roles must not share hidden rubrics with the pupil.
-import { F01_SPEC } from './f01Spec.js';
+// Prompts for Buddy-018 teach cycle. Roles must not share hidden rubrics with the pupil.
 
-function f01Brief() {
+function fragmentBrief(spec) {
+  const prereq = Array.isArray(spec.prerequisites) && spec.prerequisites.length
+    ? spec.prerequisites.join(', ')
+    : '—';
   return [
-    `Фрагмент: ${F01_SPEC.fragmentId} — ${F01_SPEC.title}`,
-    `Программа: ${F01_SPEC.programVersion}`,
-    `Учебная цель: ${F01_SPEC.learningGoal}`,
-    `Понятия: ${F01_SPEC.concepts.join('; ')}`,
-    `Охват источника: ${F01_SPEC.sourceScope}`,
-    `Тип задачи после изучения: ${F01_SPEC.taskType}`,
-    `Признаки успеха: ${F01_SPEC.successSigns.join('; ')}`,
+    `Фрагмент: ${spec.fragmentId} — ${spec.title}`,
+    `Программа: ${spec.programVersion}`,
+    `Учебная цель: ${spec.learningGoal}`,
+    `Понятия: ${spec.concepts.join('; ')}`,
+    `Пререквизиты: ${prereq}`,
+    `Охват источника: ${spec.sourceScope}`,
+    `Тип задачи после изучения: ${spec.taskType}`,
+    `Признаки успеха: ${spec.successSigns.join('; ')}`,
   ].join('\n');
 }
 
-export function examinerTasksPrompt(sourceMaterial) {
+export function examinerTasksPrompt(spec, sourceMaterial) {
+  const id = spec.fragmentId;
   const system = `Вы — Экзаменатор учебного эксперимента Buddy (роль логическая, не отдельный сервис).
 Вы составляете проверочные задачи ДО любых ответов Ученика. У вас нет доступа к ответам Ученика.
 
 Правила:
-- Опирайтесь ТОЛЬКО на учебный материал F01 и спеку фрагмента ниже. Не привлекайте другие главы ТУАИ.
+- Опирайтесь ТОЛЬКО на учебный материал ${id} и спеку фрагмента ниже. Не привлекайте другие главы ТУАИ.
 - Составьте РОВНО 3 новые задачи на применение (не пересказ).
 - Каждая задача должна быть содержательно новой: другая ситуация/формулировка, не пересказ абзацев источника и не переименование примеров автора.
 - Для каждой задачи дайте novelty: почему она не содержится в источнике (содержательный аргумент, не «другие слова»).
@@ -26,9 +30,9 @@ export function examinerTasksPrompt(sourceMaterial) {
 - Ответьте ТОЛЬКО JSON.`;
 
   const user = [
-    f01Brief(),
+    fragmentBrief(spec),
     '',
-    'Учебный материал F01 (первоисточник):',
+    `Учебный материал ${id} (первоисточник):`,
     '---',
     sourceMaterial,
     '---',
@@ -46,7 +50,7 @@ export function examinerTasksPrompt(sourceMaterial) {
             application: 'применение',
             spirit: 'дух метода',
             model_answer_hint: 'краткий эталон',
-            source_ref: 'цитата или место в материале F01',
+            source_ref: `цитата или место в материале ${id}`,
           },
         },
       ],
@@ -56,16 +60,17 @@ export function examinerTasksPrompt(sourceMaterial) {
   return { system, user };
 }
 
-export function pupilPrinciplesPrompt(sourceMaterial) {
+export function pupilPrinciplesPrompt(spec, sourceMaterial) {
+  const id = spec.fragmentId;
   const system = `Вы — Ученик Би в учебном эксперименте Buddy (не обычный чат с А).
-Изучите ТОЛЬКО материал F01. Сформулируйте основные принципы своими словами.
+Изучите ТОЛЬКО материал ${id}. Сформулируйте основные принципы своими словами.
 Не выдумывайте факты вне источника. Не объявляйте, что вы «уже навсегда усвоили» материал.
 Ответьте ТОЛЬКО JSON.`;
 
   const user = [
-    f01Brief(),
+    fragmentBrief(spec),
     '',
-    'Учебный материал F01:',
+    `Учебный материал ${id}:`,
     '---',
     sourceMaterial,
     '---',
@@ -76,13 +81,14 @@ export function pupilPrinciplesPrompt(sourceMaterial) {
   return { system, user };
 }
 
-export function pupilAnswersPrompt(principles, tasksForPupil) {
-  const system = `Вы — Ученик Би. Решите задачи самостоятельно, опираясь на изученные принципы F01.
+export function pupilAnswersPrompt(spec, principles, tasksForPupil) {
+  const id = spec.fragmentId;
+  const system = `Вы — Ученик Би. Решите задачи самостоятельно, опираясь на изученные принципы ${id}.
 Не просите подсказок. Не утверждайте окончательное усвоение.
 Ответьте ТОЛЬКО JSON.`;
 
   const user = [
-    `Учебная цель F01: ${F01_SPEC.learningGoal}`,
+    `Учебная цель ${id}: ${spec.learningGoal}`,
     '',
     'Ваши принципы (из предыдущего шага):',
     JSON.stringify(principles, null, 2),
@@ -96,18 +102,19 @@ export function pupilAnswersPrompt(principles, tasksForPupil) {
   return { system, user };
 }
 
-export function examinerGradePrompt(sourceMaterial, tasksWithRubrics, principles, answers) {
-  const system = `Вы — Экзаменатор. Оцените решения Ученика по четырём критериям, опираясь на первоисточник F01 и заранее составленные рубрики.
-Для КАЖДОГО критерия каждой задачи обязательны: pass (bool), justification (обоснование), source_ref (ссылка/цитата из материала F01).
+export function examinerGradePrompt(spec, sourceMaterial, tasksWithRubrics, principles, answers) {
+  const id = spec.fragmentId;
+  const system = `Вы — Экзаменатор. Оцените решения Ученика по четырём критериям, опираясь на первоисточник ${id} и заранее составленные рубрики.
+Для КАЖДОГО критерия каждой задачи обязательны: pass (bool), justification (обоснование), source_ref (ссылка/цитата из материала ${id}).
 Не повышайте оценку без опоры на источник.
 Если применение провалено менее чем в 2 задачах из 3 — set needs_retest=true и предложите РОВНО 3 НОВЫЕ задачи (с novelty и rubric), отличные от первого комплекта.
 Если needs_retest=false, поле retest_tasks = [].
 Ответьте ТОЛЬКО JSON.`;
 
   const user = [
-    f01Brief(),
+    fragmentBrief(spec),
     '',
-    'Первоисточник F01:',
+    `Первоисточник ${id}:`,
     '---',
     sourceMaterial,
     '---',
@@ -142,16 +149,17 @@ export function examinerGradePrompt(sourceMaterial, tasksWithRubrics, principles
   return { system, user };
 }
 
-export function examinerGradeRetestPrompt(sourceMaterial, retestTasks, principles, answers) {
+export function examinerGradeRetestPrompt(spec, sourceMaterial, retestTasks, principles, answers) {
+  const id = spec.fragmentId;
   const system = `Вы — Экзаменатор на повторном испытании (единственный ретест).
-Оцените новые ответы по тем же правилам: для каждого критерия — pass, justification, source_ref из материала F01.
+Оцените новые ответы по тем же правилам: для каждого критерия — pass, justification, source_ref из материала ${id}.
 needs_retest всегда false. retest_tasks всегда [].
 Ответьте ТОЛЬКО JSON.`;
 
   const user = [
-    f01Brief(),
+    fragmentBrief(spec),
     '',
-    'Первоисточник F01:',
+    `Первоисточник ${id}:`,
     '---',
     sourceMaterial,
     '---',

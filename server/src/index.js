@@ -15,7 +15,7 @@ import { handleDcb } from './dcb/routes.js';
 import { handleBi } from './bi/routes.js';
 import { readNotionPage, FIRST_CHAPTER_PAGE_ID } from './notion/readPage.js';
 import { readTuaiIntroCorpus } from './notion/readCorpus.js';
-import { runF01Experiment } from './teach/f01Cycle.js';
+import { runTeachCycle } from './teach/fragmentCycle.js';
 
 const iso = (env) => new Date(now(env)).toISOString();
 
@@ -230,13 +230,25 @@ const routes = {
     return json(corpus);
   },
 
-  // Buddy-018 step 4: one experimental F01 teach cycle (admin). No memory writes.
+  // Buddy-018 step 5: teach cycle by fragmentId (F01|F02). No memory writes.
+  'POST /admin/teach/run': async (request, env) => {
+    const session = await requireAdmin(request, env);
+    await rateLimit(env, 'LIMIT_USER', session.userId);
+    const body = await request.json().catch(() => ({}));
+    const fragmentId = String(body?.fragmentId || '').trim();
+    const report = await runTeachCycle(env, { fragmentId, adminId: session.userId });
+    await env.DB.prepare('INSERT INTO admin_audit (admin_id, action, created_at) VALUES (?1, ?2, ?3)')
+      .bind(session.userId, `teach:${report.fragmentId}:${report.status}`, iso(env)).run();
+    return json(report);
+  },
+
+  // Step-4 alias → F01
   'POST /admin/teach/f01/run': async (request, env) => {
     const session = await requireAdmin(request, env);
     await rateLimit(env, 'LIMIT_USER', session.userId);
-    const report = await runF01Experiment(env, { adminId: session.userId });
+    const report = await runTeachCycle(env, { fragmentId: 'F01', adminId: session.userId });
     await env.DB.prepare('INSERT INTO admin_audit (admin_id, action, created_at) VALUES (?1, ?2, ?3)')
-      .bind(session.userId, `teach_f01:${report.status}`, iso(env)).run();
+      .bind(session.userId, `teach:F01:${report.status}`, iso(env)).run();
     return json(report);
   },
 };

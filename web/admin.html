@@ -40,9 +40,17 @@
         </table>
       </div>
 
-      <h2 class="admin-teach-heading">Эксперимент F01</h2>
-      <p class="note">Buddy-018 · шаг 4. Один запуск — один учебный цикл по фрагменту F01. Это экспериментальная проверка, а не доказательство, что постоянный Би уже усвоил материал. В память Би ничего не пишется.</p>
-      <button type="button" class="btn btn-primary" id="admin-teach-f01">Запустить эксперимент F01</button>
+      <h2 class="admin-teach-heading">Обучение Би</h2>
+      <p class="note">Buddy-018 · шаг 5. Один запуск — один учебный цикл по выбранному фрагменту программы. Экспериментальная проверка: в память Би ничего не пишется. Пока доступны только F01 и F02.</p>
+      <div class="admin-teach-controls">
+        <label class="admin-teach-label" for="admin-teach-fragment">Учебный фрагмент
+          <select id="admin-teach-fragment">
+            <option value="F01">F01 — Инженер-философ и картина мира</option>
+            <option value="F02">F02 — Четыре класса трудных вопросов</option>
+          </select>
+        </label>
+        <button type="button" class="btn btn-primary" id="admin-teach-run">Начать обучение</button>
+      </div>
       <p id="admin-teach-status" class="note" hidden></p>
       <div id="admin-teach-result" class="admin-teach-result" hidden></div>
     </section>
@@ -51,7 +59,7 @@
   <footer>
     <a href="./">Buddy</a>
     <a href="https://github.com/jfeldman777/buddy">Исходный код</a>
-    <span>Alpha 0.01 · версия <span data-version>019</span></span>
+    <span>Alpha 0.01 · версия <span data-version>020</span></span>
     <button type="button" class="link-button" data-check-update>Проверить обновления</button>
   </footer>
 </body>

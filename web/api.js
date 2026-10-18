@@ -57,8 +57,11 @@ export function createApi(base, fetchImpl = (...args) => fetch(...args)) {
       const qs = q.toString();
       return call('GET', `/admin/notion/page${qs ? `?${qs}` : ''}`, { token });
     },
-    /** Buddy-018 step 4: one experimental F01 teach cycle (elevated admin). */
-    adminTeachF01Run: (token) => call('POST', '/admin/teach/f01/run', { token, body: {} }),
+    /** Buddy-018 step 5: teach cycle for allowed fragment (elevated admin). */
+    adminTeachRun: (token, fragmentId) => call('POST', '/admin/teach/run', {
+      token,
+      body: { fragmentId },
+    }),
     dcbBudget: (token) => call('GET', '/dcb/budget', { token }),
     dcbPersonas: (token) => call('GET', '/dcb/personas', { token }),
     dcbCreatePersona: (token, body) => call('POST', '/dcb/personas', { token, body }),
