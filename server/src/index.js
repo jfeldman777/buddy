@@ -16,6 +16,7 @@ import { handleBi } from './bi/routes.js';
 import { readNotionPage, FIRST_CHAPTER_PAGE_ID } from './notion/readPage.js';
 import { readTuaiIntroCorpus } from './notion/readCorpus.js';
 import { runTeachCycle } from './teach/fragmentCycle.js';
+import { createTeachRuling, listTeachRulings } from './teach/rulings.js';
 
 const iso = (env) => new Date(now(env)).toISOString();
 
@@ -250,6 +251,37 @@ const routes = {
     await env.DB.prepare('INSERT INTO admin_audit (admin_id, action, created_at) VALUES (?1, ?2, ?3)')
       .bind(session.userId, `teach:F01:${report.status}`, iso(env)).run();
     return json(report);
+  },
+
+  // Creator disagreement with Examiner — stored for next teach run (not Bi memory).
+  'POST /admin/teach/ruling': async (request, env) => {
+    const session = await requireAdmin(request, env);
+    await rateLimit(env, 'LIMIT_USER', session.userId);
+    const body = await request.json().catch(() => ({}));
+    const ruling = await createTeachRuling(env, {
+      fragmentId: body?.fragmentId,
+      taskId: body?.taskId,
+      taskPrompt: body?.taskPrompt,
+      pupilAnswer: body?.pupilAnswer,
+      examinerNote: body?.examinerNote,
+      creatorRuling: body?.creatorRuling,
+      sourceRef: body?.sourceRef,
+      adminId: session.userId,
+    });
+    await env.DB.prepare('INSERT INTO admin_audit (admin_id, action, created_at) VALUES (?1, ?2, ?3)')
+      .bind(session.userId, `teach_ruling:${ruling.fragmentId}:${ruling.id}`, iso(env)).run();
+    return json({
+      ruling,
+      note: 'Вердикт сохранён. Учтётся при следующем запуске обучения этого фрагмента. В память Би не записан.',
+    }, 201);
+  },
+
+  'GET /admin/teach/rulings': async (request, env) => {
+    const session = await requireAdmin(request, env);
+    await rateLimit(env, 'LIMIT_USER', session.userId);
+    const fragmentId = new URL(request.url).searchParams.get('fragmentId') || '';
+    const rulings = await listTeachRulings(env, fragmentId);
+    return json({ fragmentId: rulings[0]?.fragmentId || String(fragmentId).toUpperCase(), rulings });
   },
 };
 

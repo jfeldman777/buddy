@@ -3,6 +3,7 @@ import { HttpError } from '../http.js';
 import { chatJson } from '../bi/openai.js';
 import { readNotionPage } from '../notion/readPage.js';
 import { getFragmentSpec, teachDisclaimer } from './fragmentSpecs.js';
+import { listTeachRulings, formatRulingsForExaminer } from './rulings.js';
 import {
   examinerTasksPrompt,
   pupilPrinciplesPrompt,
@@ -145,6 +146,8 @@ export async function runTeachCycle(env, { fragmentId, adminId } = {}) {
   const usages = [];
 
   const source = await loadFragmentSource(env, spec);
+  const priorRulings = await listTeachRulings(env, spec.fragmentId, { limit: 20 });
+  const rulingsBlock = formatRulingsForExaminer(priorRulings);
   const methodist = {
     fragmentId: spec.fragmentId,
     title: spec.title,
@@ -158,7 +161,13 @@ export async function runTeachCycle(env, { fragmentId, adminId } = {}) {
   };
 
   // 1) Examiner tasks BEFORE pupil answers
-  const tasksCall = await callTeach(env, sessionId, 'teach_examiner_tasks', examinerTasksPrompt(spec, source.text), trace);
+  const tasksCall = await callTeach(
+    env,
+    sessionId,
+    'teach_examiner_tasks',
+    examinerTasksPrompt(spec, source.text, rulingsBlock),
+    trace,
+  );
   usages.push(tasksCall.usage);
   const tasks = normalizeTasks(tasksCall.json.tasks);
   const pupilTaskView = tasksForPupilView(tasks);
@@ -176,15 +185,18 @@ export async function runTeachCycle(env, { fragmentId, adminId } = {}) {
     throw new HttpError(502, 'teach_bad_principles', 'Ученик не сформулировал принципы.');
   }
 
-  // 3) Pupil answers — must not see rubrics
+  // 3) Pupil answers — must not see rubrics or Creator rulings
   const ansPrompt = pupilAnswersPrompt(spec, principles, pupilTaskView);
-  if (/model_answer_hint|novelty|source_ref|rubric/i.test(ansPrompt.user)) {
+  if (/model_answer_hint|novelty|source_ref|rubric|Вердикт Создателя/i.test(ansPrompt.user)) {
     throw new HttpError(500, 'teach_leak', 'Внутренняя ошибка: эталоны Экзаменатора попали к Ученику.');
   }
   for (const t of tasks) {
     if (ansPrompt.user.includes(t.rubric.model_answer_hint) && t.rubric.model_answer_hint.length > 12) {
       throw new HttpError(500, 'teach_leak', 'Эталон рубрики не должен попадать Ученику.');
     }
+  }
+  if (rulingsBlock && ansPrompt.user.includes(rulingsBlock.slice(0, 40))) {
+    throw new HttpError(500, 'teach_leak', 'Вердикты Создателя не должны попадать Ученику.');
   }
   const ansCall = await callTeach(env, sessionId, 'teach_pupil_answers', ansPrompt, trace);
   usages.push(ansCall.usage);
@@ -195,7 +207,7 @@ export async function runTeachCycle(env, { fragmentId, adminId } = {}) {
     env,
     sessionId,
     'teach_examiner_grade',
-    examinerGradePrompt(spec, source.text, tasks, principles, answers),
+    examinerGradePrompt(spec, source.text, tasks, principles, answers, rulingsBlock),
     trace,
   );
   usages.push(gradeCall.usage);
@@ -213,7 +225,7 @@ export async function runTeachCycle(env, { fragmentId, adminId } = {}) {
         env,
         sessionId,
         'teach_examiner_retest_tasks',
-        examinerTasksPrompt(spec, source.text),
+        examinerTasksPrompt(spec, source.text, rulingsBlock),
         trace,
       );
       usages.push(retryTasksCall.usage);
@@ -239,7 +251,7 @@ export async function runTeachCycle(env, { fragmentId, adminId } = {}) {
       env,
       sessionId,
       'teach_examiner_retest_grade',
-      examinerGradeRetestPrompt(spec, source.text, retestTasks, principles, retestAnswers),
+      examinerGradeRetestPrompt(spec, source.text, retestTasks, principles, retestAnswers, rulingsBlock),
       trace,
     );
     usages.push(retestGradeCall.usage);
@@ -277,6 +289,13 @@ export async function runTeachCycle(env, { fragmentId, adminId } = {}) {
       overall_note: String(gradeCall.json.overall_note || '').trim(),
     },
     retest,
+    creatorRulingsApplied: priorRulings.length,
+    creatorRulings: priorRulings.map((r) => ({
+      id: r.id,
+      taskId: r.taskId,
+      creatorRuling: r.creatorRuling,
+      createdAt: r.createdAt,
+    })),
     callTrace: trace,
     adminId: adminId || null,
     usage: { calls: usages.length, costMicros },

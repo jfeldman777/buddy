@@ -62,6 +62,13 @@ export function createApi(base, fetchImpl = (...args) => fetch(...args)) {
       token,
       body: { fragmentId },
     }),
+    /** Creator disagreement with Examiner — applied on next teach run. */
+    adminTeachRuling: (token, body) => call('POST', '/admin/teach/ruling', { token, body }),
+    adminTeachRulings: (token, fragmentId) => call(
+      'GET',
+      `/admin/teach/rulings?fragmentId=${encodeURIComponent(fragmentId)}`,
+      { token },
+    ),
     dcbBudget: (token) => call('GET', '/dcb/budget', { token }),
     dcbPersonas: (token) => call('GET', '/dcb/personas', { token }),
     dcbCreatePersona: (token, body) => call('POST', '/dcb/personas', { token, body }),

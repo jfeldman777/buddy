@@ -60,7 +60,80 @@ function criterionBlock(name, c) {
   return wrap;
 }
 
-function renderRound(title, round) {
+function examinerNoteFromGrade(g) {
+  if (!g) return '';
+  const bits = [];
+  for (const [name, key] of [['буква', 'letter'], ['смысл', 'sense'], ['применение', 'application'], ['дух', 'spirit']]) {
+    const c = g[key];
+    if (!c) continue;
+    bits.push(`${name}: ${c.pass ? 'да' : 'нет'}${c.justification ? ` — ${c.justification}` : ''}`);
+  }
+  if (g.error_summary) bits.push(`ошибки: ${g.error_summary}`);
+  return bits.join('; ');
+}
+
+function attachRulingForm(card, {
+  fragmentId, taskId, taskPrompt, pupilAnswer, examinerNote,
+}) {
+  const btn = el('button', 'btn', 'Не согласен');
+  btn.type = 'button';
+  const form = el('div', 'admin-teach-ruling');
+  form.hidden = true;
+
+  const ta = document.createElement('textarea');
+  ta.rows = 4;
+  ta.placeholder = 'В чём ошибка Ученика и/или Экзаменатора, и как правильно (опора на источник)…';
+  const src = document.createElement('input');
+  src.type = 'text';
+  src.placeholder = 'Опора на источник (необязательно): цитата или код класса';
+  const save = el('button', 'btn btn-primary', 'Сохранить вердикт');
+  save.type = 'button';
+  const cancel = el('button', 'btn', 'Отмена');
+  cancel.type = 'button';
+  const status = el('p', 'note', '');
+  status.hidden = true;
+  const actions = el('div', 'admin-teach-ruling-actions');
+  actions.append(save, cancel);
+  form.append(ta, src, actions, status);
+
+  btn.addEventListener('click', () => {
+    form.hidden = false;
+    btn.hidden = true;
+    ta.focus();
+  });
+  cancel.addEventListener('click', () => {
+    form.hidden = true;
+    btn.hidden = false;
+    status.hidden = true;
+  });
+  save.addEventListener('click', () => act(async () => {
+    if (!session?.token) return;
+    save.disabled = true;
+    try {
+      const res = await api.adminTeachRuling(session.token, {
+        fragmentId,
+        taskId,
+        taskPrompt,
+        pupilAnswer,
+        examinerNote,
+        creatorRuling: ta.value,
+        sourceRef: src.value,
+      });
+      status.textContent = res.note || 'Вердикт сохранён — учтётся при следующем запуске.';
+      status.hidden = false;
+      ta.disabled = true;
+      src.disabled = true;
+      save.hidden = true;
+      cancel.hidden = true;
+    } finally {
+      save.disabled = false;
+    }
+  }));
+
+  card.append(btn, form);
+}
+
+function renderRound(title, round, fragmentId) {
   const section = el('section', 'admin-teach-round');
   section.append(el('h3', null, title));
   if (!round) {
@@ -99,6 +172,15 @@ function renderRound(title, round) {
       card.append(criterionBlock('Дух', g.spirit));
       if (g.error_summary) card.append(el('p', 'note', `Ошибки: ${g.error_summary}`));
     }
+    if (fragmentId) {
+      attachRulingForm(card, {
+        fragmentId,
+        taskId: String(task.id || `t${i + 1}`),
+        taskPrompt: task.prompt || '',
+        pupilAnswer: ans?.answer || '',
+        examinerNote: examinerNoteFromGrade(g),
+      });
+    }
     section.append(card);
   });
 
@@ -125,14 +207,22 @@ function renderTeachReport(report) {
     'note',
     `Источник: ${report.source?.title || ''} (${report.source?.charCount || 0} символов). ${report.source?.scope || ''}`,
   ));
+  const applied = Number(report.creatorRulingsApplied || 0);
+  teachResult.append(el(
+    'p',
+    'note',
+    applied
+      ? `Учтено вердиктов Создателя с прошлых циклов: ${applied}.`
+      : 'Вердиктов Создателя для этого фрагмента пока нет. Если Экзаменатор ошибся — «Не согласен» у задачи; учтётся при следующем запуске.',
+  ));
 
   teachResult.append(renderRound('Раунд 1', {
     ...report.round1,
     principles: report.round1?.principles,
-  }));
+  }, frag));
 
   if (report.retest) {
-    teachResult.append(renderRound('Повторный экзамен', report.retest));
+    teachResult.append(renderRound('Повторный экзамен', report.retest, frag));
   } else {
     teachResult.append(el('p', 'note', 'Повторный экзамен не потребовался или не выполнялся.'));
   }

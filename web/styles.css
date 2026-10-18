@@ -780,6 +780,25 @@ body.chat-open footer {
   max-width: 100%;
 }
 
+.admin-teach-ruling {
+  margin-top: 0.75rem;
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+}
+
+.admin-teach-ruling textarea,
+.admin-teach-ruling input {
+  width: 100%;
+  box-sizing: border-box;
+}
+
+.admin-teach-ruling-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.5rem;
+}
+
 .admin-teach-result {
   margin-top: 1rem;
 }

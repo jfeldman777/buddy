@@ -16,13 +16,20 @@ function fragmentBrief(spec) {
   ].join('\n');
 }
 
-export function examinerTasksPrompt(spec, sourceMaterial) {
+function rulingsSection(rulingsBlock) {
+  const block = String(rulingsBlock || '').trim();
+  if (!block) return [];
+  return ['', block, ''];
+}
+
+export function examinerTasksPrompt(spec, sourceMaterial, rulingsBlock = '') {
   const id = spec.fragmentId;
   const system = `Вы — Экзаменатор учебного эксперимента Buddy (роль логическая, не отдельный сервис).
 Вы составляете проверочные задачи ДО любых ответов Ученика. У вас нет доступа к ответам Ученика.
 
 Правила:
 - Опирайтесь ТОЛЬКО на учебный материал ${id} и спеку фрагмента ниже. Не привлекайте другие главы ТУАИ.
+- Если даны вердикты Создателя — соблюдайте их при составлении задач и эталонов (приоритет над вашими прошлыми оценками).
 - Составьте РОВНО 3 новые задачи на применение (не пересказ).
 - Каждая задача должна быть содержательно новой: другая ситуация/формулировка, не пересказ абзацев источника и не переименование примеров автора.
 - Для каждой задачи дайте novelty: почему она не содержится в источнике (содержательный аргумент, не «другие слова»).
@@ -31,7 +38,7 @@ export function examinerTasksPrompt(spec, sourceMaterial) {
 
   const user = [
     fragmentBrief(spec),
-    '',
+    ...rulingsSection(rulingsBlock),
     `Учебный материал ${id} (первоисточник):`,
     '---',
     sourceMaterial,
@@ -102,18 +109,19 @@ export function pupilAnswersPrompt(spec, principles, tasksForPupil) {
   return { system, user };
 }
 
-export function examinerGradePrompt(spec, sourceMaterial, tasksWithRubrics, principles, answers) {
+export function examinerGradePrompt(spec, sourceMaterial, tasksWithRubrics, principles, answers, rulingsBlock = '') {
   const id = spec.fragmentId;
   const system = `Вы — Экзаменатор. Оцените решения Ученика по четырём критериям, опираясь на первоисточник ${id} и заранее составленные рубрики.
 Для КАЖДОГО критерия каждой задачи обязательны: pass (bool), justification (обоснование), source_ref (ссылка/цитата из материала ${id}).
 Не повышайте оценку без опоры на источник.
+Если даны вердикты Создателя — они обязательны при оценке (приоритет над вашей прошлой мягкостью/строгостью).
 Если применение провалено менее чем в 2 задачах из 3 — set needs_retest=true и предложите РОВНО 3 НОВЫЕ задачи (с novelty и rubric), отличные от первого комплекта.
 Если needs_retest=false, поле retest_tasks = [].
 Ответьте ТОЛЬКО JSON.`;
 
   const user = [
     fragmentBrief(spec),
-    '',
+    ...rulingsSection(rulingsBlock),
     `Первоисточник ${id}:`,
     '---',
     sourceMaterial,
@@ -149,16 +157,17 @@ export function examinerGradePrompt(spec, sourceMaterial, tasksWithRubrics, prin
   return { system, user };
 }
 
-export function examinerGradeRetestPrompt(spec, sourceMaterial, retestTasks, principles, answers) {
+export function examinerGradeRetestPrompt(spec, sourceMaterial, retestTasks, principles, answers, rulingsBlock = '') {
   const id = spec.fragmentId;
   const system = `Вы — Экзаменатор на повторном испытании (единственный ретест).
 Оцените новые ответы по тем же правилам: для каждого критерия — pass, justification, source_ref из материала ${id}.
+Если даны вердикты Создателя — соблюдайте их.
 needs_retest всегда false. retest_tasks всегда [].
 Ответьте ТОЛЬКО JSON.`;
 
   const user = [
     fragmentBrief(spec),
-    '',
+    ...rulingsSection(rulingsBlock),
     `Первоисточник ${id}:`,
     '---',
     sourceMaterial,
