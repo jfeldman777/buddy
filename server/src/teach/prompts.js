@@ -1,5 +1,21 @@
 // Prompts for Buddy-018 teach cycle. Roles must not share hidden rubrics with the pupil.
 
+/** Two grading axes (Creator): буква + дух. Sense/application removed. */
+export const GRADE_CRITERIA_RULES = `
+Критерии — только буква и дух. Критериев «смысл» и «применение» НЕТ — не пишите их.
+
+БУКВА — точное совпадение с формулировкой/термином/различением первоисточника.
+Поле letter.certain=true, если буква даёт определённый ответ (да или нет — без сомнения).
+Пример: «точка» по букве — не «объект», пока источник сам не отождествил их.
+Когда первоисточник явно говорит, что объект и процесс — то же, что точка и линия, это уже буква.
+
+ДУХ — совпадение по смыслу / методу при другой формулировке.
+Пример: «добро и зло» ↔ «справедливость»; «справедливо» ≈ «правильно» (пока источник не разводит их).
+
+ВАЖНО: если letter.certain=true — дух НЕ НУЖЕН: поставьте spirit: null.
+Дух оценивайте ТОЛЬКО когда буква сомневается (letter.certain=false).
+`.trim();
+
 function fragmentBrief(spec) {
   const prereq = Array.isArray(spec.prerequisites) && spec.prerequisites.length
     ? spec.prerequisites.join(', ')
@@ -33,7 +49,8 @@ export function examinerTasksPrompt(spec, sourceMaterial, rulingsBlock = '') {
 - Составьте РОВНО 3 новые задачи на применение (не пересказ).
 - Каждая задача должна быть содержательно новой: другая ситуация/формулировка, не пересказ абзацев источника и не переименование примеров автора.
 - Для каждой задачи дайте novelty: почему она не содержится в источнике (содержательный аргумент, не «другие слова»).
-- Для каждой задачи дайте rubric с критериями буква/смысл/применение/дух и кратким эталоном хорошего ответа, со ссылкой на место в источнике (цитата или парафраз + якорь).
+- Для каждой задачи дайте rubric ТОЛЬКО с критериями буква и дух плюс краткий эталон и source_ref.
+${GRADE_CRITERIA_RULES}
 - Ответьте ТОЛЬКО JSON.`;
 
   const user = [
@@ -52,10 +69,8 @@ export function examinerTasksPrompt(spec, sourceMaterial, rulingsBlock = '') {
           prompt: 'текст задачи',
           novelty: { is_new: true, reason: 'содержательное обоснование новизны' },
           rubric: {
-            letter: 'что проверить по букве источника',
-            sense: 'понимание',
-            application: 'применение',
-            spirit: 'дух метода',
+            letter: 'что проверить по букве (точное совпадение с источником)',
+            spirit: 'что проверить по духу (совпадение по смыслу/методу)',
             model_answer_hint: 'краткий эталон',
             source_ref: `цитата или место в материале ${id}`,
           },
@@ -111,12 +126,14 @@ export function pupilAnswersPrompt(spec, principles, tasksForPupil) {
 
 export function examinerGradePrompt(spec, sourceMaterial, tasksWithRubrics, principles, answers, rulingsBlock = '') {
   const id = spec.fragmentId;
-  const system = `Вы — Экзаменатор. Оцените решения Ученика по четырём критериям, опираясь на первоисточник ${id} и заранее составленные рубрики.
-Для КАЖДОГО критерия каждой задачи обязательны: pass (bool), justification (обоснование), source_ref (ссылка/цитата из материала ${id}).
+  const system = `Вы — Экзаменатор. Оцените решения Ученика (буква; дух — только если буква сомневается), опираясь на первоисточник ${id} и рубрики.
+${GRADE_CRITERIA_RULES}
+Для letter всегда: pass, certain, justification, source_ref из материала ${id}.
+Для spirit: объект с pass/justification/source_ref ТОЛЬКО если letter.certain=false; иначе spirit=null.
 Не повышайте оценку без опоры на источник.
-Если даны вердикты Создателя — они обязательны при оценке (приоритет над вашей прошлой мягкостью/строгостью).
-Если применение провалено менее чем в 2 задачах из 3 — set needs_retest=true и предложите РОВНО 3 НОВЫЕ задачи (с novelty и rubric), отличные от первого комплекта.
-Если needs_retest=false, поле retest_tasks = [].
+Если даны вердикты/разногласия Создателя — они обязательны при оценке.
+Задача считается успешной, если (letter.certain=true и letter.pass=true) ИЛИ (letter.certain=false и spirit.pass=true).
+Если успешных задач меньше 2 из 3 — needs_retest=true и РОВНО 3 НОВЫЕ задачи (rubric: буква/дух), иначе needs_retest=false и retest_tasks=[].
 Ответьте ТОЛЬКО JSON.`;
 
   const user = [
@@ -141,11 +158,15 @@ export function examinerGradePrompt(spec, sourceMaterial, tasksWithRubrics, prin
       grades: [
         {
           task_id: 't1',
-          letter: { pass: true, justification: '…', source_ref: '…' },
-          sense: { pass: true, justification: '…', source_ref: '…' },
-          application: { pass: true, justification: '…', source_ref: '…' },
-          spirit: { pass: true, justification: '…', source_ref: '…' },
-          error_summary: 'если есть ошибки — кратко; иначе пусто',
+          letter: { pass: true, certain: true, justification: '…', source_ref: '…' },
+          spirit: null,
+          error_summary: '',
+        },
+        {
+          task_id: 't2',
+          letter: { pass: false, certain: false, justification: 'буква сомневается…', source_ref: '…' },
+          spirit: { pass: true, justification: 'по смыслу…', source_ref: '…' },
+          error_summary: '',
         },
       ],
       needs_retest: false,
@@ -160,7 +181,8 @@ export function examinerGradePrompt(spec, sourceMaterial, tasksWithRubrics, prin
 export function examinerGradeRetestPrompt(spec, sourceMaterial, retestTasks, principles, answers, rulingsBlock = '') {
   const id = spec.fragmentId;
   const system = `Вы — Экзаменатор на повторном испытании (единственный ретест).
-Оцените новые ответы по тем же правилам: для каждого критерия — pass, justification, source_ref из материала ${id}.
+Те же правила: буква всегда; дух только если letter.certain=false; иначе spirit=null.
+${GRADE_CRITERIA_RULES}
 Если даны вердикты Создателя — соблюдайте их.
 needs_retest всегда false. retest_tasks всегда [].
 Ответьте ТОЛЬКО JSON.`;

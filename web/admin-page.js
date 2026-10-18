@@ -69,13 +69,26 @@ function criterionBlock(name, c) {
   return wrap;
 }
 
+/** Strip legacy sense/application labels from stored examiner notes. */
+function sanitizeExaminerNote(text) {
+  return String(text || '')
+    .replace(/(^|[;\s])смысл\s*:\s*[^;]*/gi, '$1')
+    .replace(/(^|[;\s])применение\s*:\s*[^;]*/gi, '$1')
+    .replace(/;\s*;/g, ';')
+    .replace(/^[\s;]+|[\s;]+$/g, '')
+    .trim();
+}
+
 function examinerNoteFromGrade(g) {
   if (!g) return '';
   const bits = [];
-  for (const [name, key] of [['буква', 'letter'], ['смысл', 'sense'], ['применение', 'application'], ['дух', 'spirit']]) {
-    const c = g[key];
-    if (!c) continue;
-    bits.push(`${name}: ${c.pass ? 'да' : 'нет'}${c.justification ? ` — ${c.justification}` : ''}`);
+  const letter = g.letter;
+  if (letter) {
+    const cert = letter.certain === true ? ', определённо' : letter.certain === false ? ', сомневается' : '';
+    bits.push(`буква: ${letter.pass ? 'да' : 'нет'}${cert}${letter.justification ? ` — ${letter.justification}` : ''}`);
+  }
+  if (g.spirit) {
+    bits.push(`дух: ${g.spirit.pass ? 'да' : 'нет'}${g.spirit.justification ? ` — ${g.spirit.justification}` : ''}`);
   }
   if (g.error_summary) bits.push(`ошибки: ${g.error_summary}`);
   return bits.join('; ');
@@ -176,10 +189,15 @@ function renderRound(title, round, fragmentId) {
     const g = grades.get(String(task.id));
     if (g) {
       card.append(el('h5', null, 'Оценка'));
-      card.append(criterionBlock('Буква', g.letter));
-      card.append(criterionBlock('Смысл', g.sense));
-      card.append(criterionBlock('Применение', g.application));
-      card.append(criterionBlock('Дух', g.spirit));
+      card.append(criterionBlock(
+        g.letter?.certain === false ? 'Буква (сомневается)' : 'Буква',
+        g.letter,
+      ));
+      if (g.spirit) {
+        card.append(criterionBlock('Дух', g.spirit));
+      } else {
+        card.append(el('p', 'note', 'Дух не нужен: буква дала определённый ответ.'));
+      }
       if (g.error_summary) card.append(el('p', 'note', `Ошибки: ${g.error_summary}`));
     }
     if (fragmentId) {
@@ -270,7 +288,7 @@ async function renderDisputeDetail(id) {
   disputeDetail.append(el('h4', null, 'Ответ Би'));
   disputeDetail.append(el('p', null, d.pupilAnswer || '—'));
   disputeDetail.append(el('h4', null, 'Экзаменатор'));
-  disputeDetail.append(el('p', 'note', d.examinerNote || '—'));
+  disputeDetail.append(el('p', 'note', sanitizeExaminerNote(d.examinerNote) || '—'));
   disputeDetail.append(el('h4', null, 'История'));
   for (const m of packed.messages || []) {
     const line = el('p', 'admin-dispute-msg');

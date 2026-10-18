@@ -33,25 +33,33 @@ function makeTasks(prefix = 'A', topic = 'оценку продукта фило
       reason: `Содержательно новая ситуация ${prefix}${n}: другой контекст, не пересказ примеров из текста.`,
     },
     rubric: {
-      letter: 'опирается на ключевые различения источника',
-      sense: 'понимает метод',
-      application: 'применяет к новой ситуации',
-      spirit: 'дух метода источника',
+      letter: 'точное совпадение с термином/формулировкой источника',
+      spirit: 'совпадение по смыслу/методу при другой формулировке',
       model_answer_hint: `Эталон скрытый ${prefix}${n} SECRET_RUBRIC_MARKER`,
       source_ref: 'якорь в первоисточнике',
     },
   }));
 }
 
-function makeGrades(passApp = [true, true, false], sourceRef = 'источник') {
-  return [1, 2, 3].map((n, i) => ({
-    task_id: `t${n}`,
-    letter: criterion(true, sourceRef),
-    sense: criterion(true, sourceRef),
-    application: criterion(passApp[i], sourceRef),
-    spirit: criterion(true, sourceRef),
-    error_summary: passApp[i] ? '' : 'Слабое применение',
-  }));
+function makeGrades(passTask = [true, true, false], sourceRef = 'источник') {
+  return [1, 2, 3].map((n, i) => {
+    const ok = passTask[i];
+    // Mix: decisive letter when ok; uncertain letter + spirit when fail path needs spirit
+    if (ok) {
+      return {
+        task_id: `t${n}`,
+        letter: { ...criterion(true, sourceRef), certain: true },
+        spirit: null,
+        error_summary: '',
+      };
+    }
+    return {
+      task_id: `t${n}`,
+      letter: { ...criterion(false, sourceRef), certain: false },
+      spirit: criterion(false, sourceRef),
+      error_summary: 'Слабый дух',
+    };
+  });
 }
 
 function installTeachMocks(api, {
@@ -188,23 +196,35 @@ test('teach normalizeTasks: требует novelty reason и source_ref', () => 
   assert.equal('rubric' in tasksForPupilView(ok)[0], false);
 });
 
-test('teach finalStatus: 2/3 application → preliminary_pass', () => {
-  const normalized = makeGrades([true, true, false]).map((g) => ({
-    task_id: g.task_id,
-    letter: g.letter,
-    sense: g.sense,
-    application: g.application,
-    spirit: g.spirit,
-    error_summary: '',
-  }));
+test('teach finalStatus: 2/3 taskPass (буква или дух) → preliminary_pass', () => {
+  const normalized = makeGrades([true, true, false]);
   assert.equal(teachTest.finalStatus(normalized), 'experimental_preliminary_pass');
-  assert.equal(
-    teachTest.finalStatus(normalized.map((g, i) => ({
-      ...g,
-      application: criterion(i === 0),
-    }))),
-    'experimental_preliminary_fail',
-  );
+  assert.equal(teachTest.finalStatus(makeGrades([true, false, false])), 'experimental_preliminary_fail');
+});
+
+test('teach normalizeGrades: дух не нужен, если буква certain', () => {
+  const ok = teachTest.normalizeGrades([
+    {
+      task_id: 't1',
+      letter: { pass: true, certain: true, justification: 'точное совпадение с кодом', source_ref: '(357)' },
+      spirit: null,
+    },
+    {
+      task_id: 't2',
+      letter: { pass: false, certain: false, justification: 'буква сомневается', source_ref: '—' },
+      spirit: { pass: true, justification: 'по смыслу класс тот же', source_ref: '(357)' },
+    },
+    {
+      task_id: 't3',
+      letter: { pass: true, certain: true, justification: 'буква ясна', source_ref: '(468)' },
+      spirit: { pass: false, justification: 'игнор', source_ref: 'x' },
+    },
+  ], ['t1', 't2', 't3']);
+  assert.equal(ok[0].spirit, null);
+  assert.equal(ok[1].spirit.pass, true);
+  assert.equal(ok[2].spirit, null); // certain letter drops spirit
+  assert.equal(teachTest.taskPass(ok[0]), true);
+  assert.equal(teachTest.taskPass(ok[1]), true);
 });
 
 async function runFragmentHttpTest(fragmentId, fixture) {

@@ -139,9 +139,7 @@ test('POST /admin/teach/ruling + следующий run подмешивает �
             novelty: { is_new: true, reason: 'Содержательно новая ситуация вне примеров автора из абзаца.' },
             rubric: {
               letter: 'коды',
-              sense: 'классы',
-              application: 'применить',
-              spirit: 'дух',
+              spirit: 'дух классов',
               model_answer_hint: `SECRET_RUBRIC_${n}`,
               source_ref: '(357)',
             },
@@ -161,10 +159,8 @@ test('POST /admin/teach/ruling + следующий run подмешивает �
         content = {
           grades: [1, 2, 3].map((n) => ({
             task_id: `t${n}`,
-            letter: { pass: true, justification: 'ok', source_ref: 'src' },
-            sense: { pass: true, justification: 'ok', source_ref: 'src' },
-            application: { pass: true, justification: 'ok', source_ref: 'src' },
-            spirit: { pass: true, justification: 'ok', source_ref: 'src' },
+            letter: { pass: true, certain: true, justification: 'ok', source_ref: 'src' },
+            spirit: null,
             error_summary: '',
           })),
           needs_retest: false,

@@ -51,8 +51,6 @@ function normalizeTasks(rawTasks) {
       novelty: { is_new: true, reason: String(novelty.reason).trim() },
       rubric: {
         letter: String(rubric.letter || '').trim(),
-        sense: String(rubric.sense || '').trim(),
-        application: String(rubric.application || '').trim(),
         spirit: String(rubric.spirit || '').trim(),
         model_answer_hint: String(rubric.model_answer_hint || '').trim(),
         source_ref: String(rubric.source_ref || '').trim(),
@@ -68,34 +66,57 @@ function normalizeGrades(rawGrades, taskIds) {
   const byId = new Map(rawGrades.map((g) => [String(g?.task_id || ''), g]));
   return taskIds.map((id) => {
     const g = byId.get(id) || rawGrades[taskIds.indexOf(id)];
-    const letter = criterion(g?.letter);
-    const sense = criterion(g?.sense);
-    const application = criterion(g?.application);
-    const spirit = criterion(g?.spirit);
-    for (const [name, c] of [['letter', letter], ['sense', sense], ['application', application], ['spirit', spirit]]) {
-      if (!c.justification || !c.source_ref) {
-        throw new HttpError(502, 'teach_bad_grades', `Оценка ${id}/${name}: нужны justification и source_ref.`);
+    const letterRaw = g?.letter && typeof g.letter === 'object' ? g.letter : {};
+    const letter = {
+      ...criterion(letterRaw),
+      certain: letterRaw.certain === true,
+    };
+    if (!letter.justification || !letter.source_ref) {
+      throw new HttpError(502, 'teach_bad_grades', `Оценка ${id}/letter: нужны justification и source_ref.`);
+    }
+
+    let spirit = null;
+    if (letter.certain) {
+      // Spirit not needed when letter is decisive.
+      spirit = null;
+    } else {
+      const spiritRaw = g?.spirit;
+      if (spiritRaw == null || typeof spiritRaw !== 'object') {
+        throw new HttpError(
+          502,
+          'teach_bad_grades',
+          `Оценка ${id}/spirit: нужна, когда буква сомневается (certain=false).`,
+        );
+      }
+      spirit = criterion(spiritRaw);
+      if (!spirit.justification || !spirit.source_ref) {
+        throw new HttpError(502, 'teach_bad_grades', `Оценка ${id}/spirit: нужны justification и source_ref.`);
       }
     }
+
     return {
       task_id: id,
       letter,
-      sense,
-      application,
       spirit,
       error_summary: String(g?.error_summary || '').trim(),
     };
   });
 }
 
-function applicationPassCount(grades) {
-  return grades.filter((g) => g.application.pass).length;
+/** Task succeeds by letter when certain; otherwise by spirit. */
+function taskPass(g) {
+  if (g.letter?.certain) return g.letter.pass === true;
+  return g.spirit?.pass === true;
+}
+
+function taskPassCount(grades) {
+  return grades.filter(taskPass).length;
 }
 
 function finalStatus(grades) {
-  // Preliminary experimental bar: application pass on at least 2 of 3.
-  const app = applicationPassCount(grades);
-  return app >= 2 ? 'experimental_preliminary_pass' : 'experimental_preliminary_fail';
+  return taskPassCount(grades) >= 2
+    ? 'experimental_preliminary_pass'
+    : 'experimental_preliminary_fail';
 }
 
 async function loadFragmentSource(env, spec) {
@@ -215,7 +236,7 @@ export async function runTeachCycle(env, { fragmentId, adminId } = {}) {
   let retest = null;
   let statusGrades = grades1;
 
-  const needRetest = gradeCall.json.needs_retest === true || applicationPassCount(grades1) < 2;
+  const needRetest = gradeCall.json.needs_retest === true || taskPassCount(grades1) < 2;
   if (needRetest) {
     let retestTasks;
     try {
@@ -321,6 +342,7 @@ export const __test = {
   normalizeGrades,
   tasksForPupilView,
   finalStatus,
-  applicationPassCount,
+  taskPass,
+  taskPassCount,
   getFragmentSpec,
 };
