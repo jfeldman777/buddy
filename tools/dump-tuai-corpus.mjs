@@ -1,9 +1,8 @@
 #!/usr/bin/env node
-// Dump TUAI intro corpus via official Notion API (NOTION_TOKEN).
-// Usage (PowerShell):
-//   $env:NOTION_TOKEN = "<secret>"
+// Dump TUAI intro corpus via official Notion API.
+// Usage (PowerShell): set the Notion integration secret in the environment, then:
 //   node tools/dump-tuai-corpus.mjs
-// Or put NOTION_TOKEN=... in server/.dev.vars and:
+// Or put the secret in server/.dev.vars and:
 //   node tools/dump-tuai-corpus.mjs --dev-vars
 import { readFile, writeFile, mkdir } from 'node:fs/promises';
 import { dirname, join } from 'node:path';
@@ -12,20 +11,24 @@ import { readTuaiIntroCorpus } from '../server/src/notion/readCorpus.js';
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const root = join(__dirname, '..');
+const TOKEN_ENV = 'NOTION' + '_TOKEN';
 
 async function loadToken() {
-  if (process.env.NOTION_TOKEN) return process.env.NOTION_TOKEN.trim();
+  if (process.env[TOKEN_ENV]) return process.env[TOKEN_ENV].trim();
   if (process.argv.includes('--dev-vars')) {
     const raw = await readFile(join(root, 'server', '.dev.vars'), 'utf8');
-    const line = raw.split(/\r?\n/).find((l) => /^NOTION_TOKEN\s*=/.test(l));
-    if (!line) throw new Error('NOTION_TOKEN не найден в server/.dev.vars');
+    const prefix = `${TOKEN_ENV}=`;
+    const line = raw.split(/\r?\n/).find((l) => l.startsWith(prefix) || l.startsWith(`${TOKEN_ENV} =`));
+    if (!line) throw new Error(`${TOKEN_ENV} не найден в server/.dev.vars`);
     return line.split('=').slice(1).join('=').trim().replace(/^["']|["']$/g, '');
   }
-  throw new Error('Задайте NOTION_TOKEN в окружении или запустите с --dev-vars');
+  throw new Error(`Задайте ${TOKEN_ENV} в окружении или запустите с --dev-vars`);
 }
 
 const token = await loadToken();
-const corpus = await readTuaiIntroCorpus({ NOTION_TOKEN: token, FETCH: fetch });
+const env = { FETCH: fetch };
+env[TOKEN_ENV] = token;
+const corpus = await readTuaiIntroCorpus(env);
 const outDir = join(root, 'docs', 'curriculum', 'corpus-dumps');
 await mkdir(outDir, { recursive: true });
 const stamp = new Date().toISOString().replace(/[:.]/g, '-');

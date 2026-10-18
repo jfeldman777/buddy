@@ -756,6 +756,38 @@ body.chat-open footer {
   white-space: nowrap;
 }
 
+.admin-teach-heading {
+  margin-top: 1.75rem;
+}
+
+.admin-teach-result {
+  margin-top: 1rem;
+}
+
+.admin-teach-disclaimer,
+.admin-teach-final {
+  margin: 0.5rem 0;
+}
+
+.admin-teach-round {
+  margin: 1.25rem 0;
+  padding-top: 0.5rem;
+  border-top: 1px solid var(--line);
+}
+
+.admin-teach-task {
+  margin: 1rem 0;
+  padding: 0.75rem 0;
+}
+
+.admin-teach-crit {
+  margin: 0.4rem 0 0.6rem;
+}
+
+.admin-teach-crit .note {
+  margin: 0.15rem 0;
+}
+
 .dcb-photo-wrap {
   display: flex;
   flex-wrap: wrap;

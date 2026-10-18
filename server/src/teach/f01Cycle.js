@@ -1,0 +1,286 @@
+// Buddy-018 step 4: one experimental F01 teach cycle (admin). No memory / DCB / A–Bi chat writes.
+import { HttpError } from '../http.js';
+import { chatJson } from '../bi/openai.js';
+import { readNotionPage } from '../notion/readPage.js';
+import { F01_SPEC, F01_EXPERIMENT_DISCLAIMER } from './f01Spec.js';
+import {
+  examinerTasksPrompt,
+  pupilPrinciplesPrompt,
+  pupilAnswersPrompt,
+  examinerGradePrompt,
+  examinerGradeRetestPrompt,
+  tasksForPupilView,
+} from './prompts.js';
+
+const TEACH_OUT_TOKENS = 1_800;
+
+function criterion(raw) {
+  if (!raw || typeof raw !== 'object') {
+    return { pass: false, justification: '', source_ref: '' };
+  }
+  return {
+    pass: raw.pass === true,
+    justification: String(raw.justification || '').trim(),
+    source_ref: String(raw.source_ref || '').trim(),
+  };
+}
+
+function normalizeTasks(rawTasks) {
+  if (!Array.isArray(rawTasks) || rawTasks.length !== 3) {
+    throw new HttpError(502, 'teach_bad_tasks', 'Экзаменатор должен вернуть ровно 3 задачи.');
+  }
+  return rawTasks.map((t, i) => {
+    const id = String(t?.id || `t${i + 1}`);
+    const prompt = String(t?.prompt || '').trim();
+    const novelty = t?.novelty && typeof t.novelty === 'object' ? t.novelty : {};
+    const rubric = t?.rubric && typeof t.rubric === 'object' ? t.rubric : {};
+    if (!prompt) throw new HttpError(502, 'teach_bad_tasks', `Пустая задача ${id}.`);
+    if (novelty.is_new !== true) {
+      throw new HttpError(502, 'teach_not_novel', `Задача ${id} не помечена как содержательно новая.`);
+    }
+    if (!String(novelty.reason || '').trim() || String(novelty.reason).trim().length < 20) {
+      throw new HttpError(502, 'teach_not_novel', `Задача ${id}: нужно содержательное обоснование новизны.`);
+    }
+    if (!String(rubric.source_ref || '').trim()) {
+      throw new HttpError(502, 'teach_bad_rubric', `Задача ${id}: в рубрике нужна ссылка на источник.`);
+    }
+    return {
+      id,
+      prompt,
+      novelty: { is_new: true, reason: String(novelty.reason).trim() },
+      rubric: {
+        letter: String(rubric.letter || '').trim(),
+        sense: String(rubric.sense || '').trim(),
+        application: String(rubric.application || '').trim(),
+        spirit: String(rubric.spirit || '').trim(),
+        model_answer_hint: String(rubric.model_answer_hint || '').trim(),
+        source_ref: String(rubric.source_ref || '').trim(),
+      },
+    };
+  });
+}
+
+function normalizeGrades(rawGrades, taskIds) {
+  if (!Array.isArray(rawGrades) || rawGrades.length !== taskIds.length) {
+    throw new HttpError(502, 'teach_bad_grades', 'Экзаменатор должен оценить каждую задачу.');
+  }
+  const byId = new Map(rawGrades.map((g) => [String(g?.task_id || ''), g]));
+  return taskIds.map((id) => {
+    const g = byId.get(id) || rawGrades[taskIds.indexOf(id)];
+    const letter = criterion(g?.letter);
+    const sense = criterion(g?.sense);
+    const application = criterion(g?.application);
+    const spirit = criterion(g?.spirit);
+    for (const [name, c] of [['letter', letter], ['sense', sense], ['application', application], ['spirit', spirit]]) {
+      if (!c.justification || !c.source_ref) {
+        throw new HttpError(502, 'teach_bad_grades', `Оценка ${id}/${name}: нужны justification и source_ref.`);
+      }
+    }
+    return {
+      task_id: id,
+      letter,
+      sense,
+      application,
+      spirit,
+      error_summary: String(g?.error_summary || '').trim(),
+    };
+  });
+}
+
+function applicationPassCount(grades) {
+  return grades.filter((g) => g.application.pass).length;
+}
+
+function finalStatus(grades) {
+  // Preliminary experimental bar: application pass on at least 2 of 3.
+  const app = applicationPassCount(grades);
+  return app >= 2 ? 'experimental_preliminary_pass' : 'experimental_preliminary_fail';
+}
+
+async function loadF01Source(env) {
+  const page = await readNotionPage(env, {
+    pageId: F01_SPEC.pageId,
+    sourceUrl: F01_SPEC.sourceUrl,
+    expandLinkedPages: false,
+  });
+  if (!page.complete || !String(page.text || '').trim()) {
+    throw new HttpError(502, 'teach_source_incomplete', 'Не удалось полностью прочитать материал F01 из Notion.');
+  }
+  // Scope note for models: F01 only — page 1 of intro, not the whole 13-page corpus.
+  return {
+    title: page.title || F01_SPEC.title,
+    pageId: page.pageId,
+    sourceUrl: page.sourceUrl,
+    text: page.text,
+    charCount: page.text.length,
+  };
+}
+
+async function callTeach(env, sessionId, role, prompt, trace) {
+  // D1 buddy_chat_usage.speaker CHECK allows only bi|extract|teach — role detail stays in trace.
+  trace.push(role);
+  const { json, usage } = await chatJson(env, {
+    sessionId,
+    speaker: 'teach',
+    system: prompt.system,
+    user: prompt.user,
+    maxOutputTokens: TEACH_OUT_TOKENS,
+  });
+  return { json, usage };
+}
+
+/**
+ * Run one F01 experiment. Does not write bi_memory / teachings / kb / DCB.
+ * @returns {Promise<object>} admin-facing report
+ */
+export async function runF01Experiment(env, { adminId } = {}) {
+  const sessionId = `teach-f01-${crypto.randomUUID()}`;
+  const trace = [];
+  const usages = [];
+
+  const source = await loadF01Source(env);
+  const methodist = {
+    fragmentId: F01_SPEC.fragmentId,
+    title: F01_SPEC.title,
+    programVersion: F01_SPEC.programVersion,
+    learningGoal: F01_SPEC.learningGoal,
+    sourceScope: F01_SPEC.sourceScope,
+    concepts: F01_SPEC.concepts,
+    taskType: F01_SPEC.taskType,
+    successSigns: F01_SPEC.successSigns,
+  };
+
+  // 1) Examiner tasks BEFORE pupil answers
+  const tasksCall = await callTeach(env, sessionId, 'teach_examiner_tasks', examinerTasksPrompt(source.text), trace);
+  usages.push(tasksCall.usage);
+  const tasks = normalizeTasks(tasksCall.json.tasks);
+  const pupilTaskView = tasksForPupilView(tasks);
+
+  // 2) Pupil principles
+  const prinCall = await callTeach(env, sessionId, 'teach_pupil_principles', pupilPrinciplesPrompt(source.text), trace);
+  usages.push(prinCall.usage);
+  const principles = {
+    list: Array.isArray(prinCall.json.principles)
+      ? prinCall.json.principles.map((p) => String(p).trim()).filter(Boolean).slice(0, 12)
+      : [],
+    summary: String(prinCall.json.summary || '').trim(),
+  };
+  if (!principles.list.length) {
+    throw new HttpError(502, 'teach_bad_principles', 'Ученик не сформулировал принципы.');
+  }
+
+  // 3) Pupil answers — must not see rubrics
+  const ansPrompt = pupilAnswersPrompt(principles, pupilTaskView);
+  if (/model_answer_hint|novelty|source_ref|rubric/i.test(ansPrompt.user)) {
+    // Soft guard: our builder should not inject rubrics; fail loud if it does.
+    throw new HttpError(500, 'teach_leak', 'Внутренняя ошибка: эталоны Экзаменатора попали к Ученику.');
+  }
+  for (const t of tasks) {
+    if (ansPrompt.user.includes(t.rubric.model_answer_hint) && t.rubric.model_answer_hint.length > 12) {
+      throw new HttpError(500, 'teach_leak', 'Эталон рубрики не должен попадать Ученику.');
+    }
+  }
+  const ansCall = await callTeach(env, sessionId, 'teach_pupil_answers', ansPrompt, trace);
+  usages.push(ansCall.usage);
+  const answers = Array.isArray(ansCall.json.answers) ? ansCall.json.answers : [];
+
+  // 4) Grade
+  const gradeCall = await callTeach(
+    env,
+    sessionId,
+    'teach_examiner_grade',
+    examinerGradePrompt(source.text, tasks, principles, answers),
+    trace,
+  );
+  usages.push(gradeCall.usage);
+  const grades1 = normalizeGrades(gradeCall.json.grades, tasks.map((t) => t.id));
+  let retest = null;
+  let statusGrades = grades1;
+
+  const needRetest = gradeCall.json.needs_retest === true || applicationPassCount(grades1) < 2;
+  if (needRetest) {
+    let retestTasks;
+    try {
+      retestTasks = normalizeTasks(gradeCall.json.retest_tasks);
+    } catch {
+      const retryTasksCall = await callTeach(
+        env,
+        sessionId,
+        'teach_examiner_retest_tasks',
+        examinerTasksPrompt(source.text),
+        trace,
+      );
+      usages.push(retryTasksCall.usage);
+      retestTasks = normalizeTasks(retryTasksCall.json.tasks);
+    }
+    const firstPrompts = new Set(tasks.map((t) => t.prompt));
+    if (retestTasks.every((t) => firstPrompts.has(t.prompt))) {
+      throw new HttpError(502, 'teach_retest_same', 'Ретест должен содержать новые задачи, не копию первого комплекта.');
+    }
+
+    const retestPupilView = tasksForPupilView(retestTasks);
+    const retestAnsCall = await callTeach(
+      env,
+      sessionId,
+      'teach_pupil_retest_answers',
+      pupilAnswersPrompt(principles, retestPupilView),
+      trace,
+    );
+    usages.push(retestAnsCall.usage);
+    const retestAnswers = Array.isArray(retestAnsCall.json.answers) ? retestAnsCall.json.answers : [];
+
+    const retestGradeCall = await callTeach(
+      env,
+      sessionId,
+      'teach_examiner_retest_grade',
+      examinerGradeRetestPrompt(source.text, retestTasks, principles, retestAnswers),
+      trace,
+    );
+    usages.push(retestGradeCall.usage);
+    const retestGrades = normalizeGrades(retestGradeCall.json.grades, retestTasks.map((t) => t.id));
+    retest = {
+      tasks: retestTasks,
+      answers: retestAnswers,
+      grades: retestGrades,
+      overall_note: String(retestGradeCall.json.overall_note || '').trim(),
+    };
+    statusGrades = retestGrades;
+  }
+
+  const status = finalStatus(statusGrades);
+  const costMicros = usages.reduce((s, u) => s + (u?.costMicros || 0), 0);
+
+  return {
+    experiment: 'Buddy-018-step4-F01',
+    disclaimer: F01_EXPERIMENT_DISCLAIMER,
+    status,
+    methodist,
+    source: {
+      pageId: source.pageId,
+      sourceUrl: source.sourceUrl,
+      title: source.title,
+      charCount: source.charCount,
+      scope: F01_SPEC.sourceScope,
+    },
+    round1: {
+      tasks,
+      principles,
+      answers,
+      grades: grades1,
+      overall_note: String(gradeCall.json.overall_note || '').trim(),
+    },
+    retest,
+    callTrace: trace,
+    adminId: adminId || null,
+    usage: { calls: usages.length, costMicros },
+  };
+}
+
+export const __test = {
+  normalizeTasks,
+  normalizeGrades,
+  tasksForPupilView,
+  finalStatus,
+  applicationPassCount,
+  F01_SPEC,
+};

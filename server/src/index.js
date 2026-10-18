@@ -15,6 +15,7 @@ import { handleDcb } from './dcb/routes.js';
 import { handleBi } from './bi/routes.js';
 import { readNotionPage, FIRST_CHAPTER_PAGE_ID } from './notion/readPage.js';
 import { readTuaiIntroCorpus } from './notion/readCorpus.js';
+import { runF01Experiment } from './teach/f01Cycle.js';
 
 const iso = (env) => new Date(now(env)).toISOString();
 
@@ -227,6 +228,16 @@ const routes = {
     await env.DB.prepare('INSERT INTO admin_audit (admin_id, action, created_at) VALUES (?1, ?2, ?3)')
       .bind(session.userId, `notion_corpus:${corpus.corpusId}:${corpus.okCount}/${corpus.pageCount}`, iso(env)).run();
     return json(corpus);
+  },
+
+  // Buddy-018 step 4: one experimental F01 teach cycle (admin). No memory writes.
+  'POST /admin/teach/f01/run': async (request, env) => {
+    const session = await requireAdmin(request, env);
+    await rateLimit(env, 'LIMIT_USER', session.userId);
+    const report = await runF01Experiment(env, { adminId: session.userId });
+    await env.DB.prepare('INSERT INTO admin_audit (admin_id, action, created_at) VALUES (?1, ?2, ?3)')
+      .bind(session.userId, `teach_f01:${report.status}`, iso(env)).run();
+    return json(report);
   },
 };
 

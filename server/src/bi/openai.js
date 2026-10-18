@@ -27,7 +27,8 @@ function userContent(user, imageDataUrl) {
   ];
 }
 
-function buildChatBody(model, system, user, imageDataUrl) {
+function buildChatBody(model, system, user, imageDataUrl, maxOutputTokens = MAX_OUTPUT_TOKENS) {
+  const outCap = Math.max(64, Math.min(Number(maxOutputTokens) || MAX_OUTPUT_TOKENS, 4_000));
   const body = {
     model,
     temperature: 0.7,
@@ -38,10 +39,10 @@ function buildChatBody(model, system, user, imageDataUrl) {
     ],
   };
   if (/^gpt-6/i.test(model)) {
-    body.max_completion_tokens = MAX_OUTPUT_TOKENS;
+    body.max_completion_tokens = outCap;
     body.reasoning_effort = 'none';
   } else {
-    body.max_tokens = MAX_OUTPUT_TOKENS;
+    body.max_tokens = outCap;
   }
   return body;
 }
@@ -94,7 +95,7 @@ function openaiErrorMessage(status, errText, model) {
   return { code: 'openai_error', message: 'Ошибка вызова OpenAI.' };
 }
 
-async function callOnce(env, { prices, system, user, imageDataUrl }) {
+async function callOnce(env, { prices, system, user, imageDataUrl, maxOutputTokens }) {
   const fetchImpl = env.FETCH ?? fetch;
   return fetchImpl(OPENAI_URL, {
     method: 'POST',
@@ -102,20 +103,28 @@ async function callOnce(env, { prices, system, user, imageDataUrl }) {
       Authorization: `Bearer ${env.OPENAI_API_KEY}`,
       'Content-Type': 'application/json',
     },
-    body: JSON.stringify(buildChatBody(prices.model, system, user, imageDataUrl)),
+    body: JSON.stringify(buildChatBody(prices.model, system, user, imageDataUrl, maxOutputTokens)),
   });
 }
 
-/** A–Bi chat: uses buddy_chat_budget, never the DCB purse. */
-export async function chatJson(env, { sessionId, speaker, system, user, imageDataUrl = null }) {
+/** A–Bi chat / teach: uses buddy_chat_budget, never the DCB purse. */
+export async function chatJson(env, {
+  sessionId,
+  speaker,
+  system,
+  user,
+  imageDataUrl = null,
+  maxOutputTokens = MAX_OUTPUT_TOKENS,
+} = {}) {
   if (!env.OPENAI_API_KEY) throw new HttpError(503, 'unconfigured', 'Сервер не настроен: нет ключа OpenAI.');
   const prices = resolvePriceTable(env);
+  const outCap = Math.max(64, Math.min(Number(maxOutputTokens) || MAX_OUTPUT_TOKENS, 4_000));
   const inputTokens = estimateInputTokens(system, user, imageDataUrl);
-  const reserveAmount = estimateCostMicros({ inputTokens, maxOutputTokens: MAX_OUTPUT_TOKENS }, prices);
+  const reserveAmount = estimateCostMicros({ inputTokens, maxOutputTokens: outCap }, prices);
   const reservation = await reserveChatStrict(env, sessionId, Math.max(reserveAmount, 1));
   let response;
   try {
-    response = await callOnce(env, { prices, system, user, imageDataUrl });
+    response = await callOnce(env, { prices, system, user, imageDataUrl, maxOutputTokens: outCap });
   } catch {
     await releaseChat(env, reservation.id);
     throw new HttpError(503, 'openai_unavailable', 'OpenAI сейчас недоступен. Попробуйте позже.');
@@ -131,7 +140,7 @@ export async function chatJson(env, { sessionId, speaker, system, user, imageDat
   let content = extractMessageText(data);
   if (!content.trim()) {
     try {
-      const retry = await callOnce(env, { prices, system, user, imageDataUrl });
+      const retry = await callOnce(env, { prices, system, user, imageDataUrl, maxOutputTokens: outCap });
       if (retry.ok) {
         const retryData = await retry.json();
         content = extractMessageText(retryData);
