@@ -74,6 +74,26 @@ export function createApi(base, fetchImpl = (...args) => fetch(...args)) {
       { token },
     ),
     adminTeachChains: (token) => call('GET', '/admin/teach/chains', { token }),
+    /** Step 8A: Creator↔Bi teaching session. */
+    adminTeachSessionStart: (token, body = {}) => call('POST', '/admin/teach/session/start', { token, body }),
+    adminTeachSessionIngest: (token, sessionId) => call('POST', '/admin/teach/session/ingest', {
+      token,
+      body: { sessionId },
+    }),
+    adminTeachSessionTurn: (token, sessionId, text) => call('POST', '/admin/teach/session/turn', {
+      token,
+      body: { sessionId, text },
+    }),
+    adminTeachSessionGet: (token, id) => call(
+      'GET',
+      `/admin/teach/session?id=${encodeURIComponent(id)}`,
+      { token },
+    ),
+    adminTeachSessions: (token) => call('GET', '/admin/teach/sessions', { token }),
+    adminTeachSessionClose: (token, sessionId) => call('POST', '/admin/teach/session/close', {
+      token,
+      body: { sessionId },
+    }),
     /** Step 6: open dispute (also step-5 /ruling alias). */
     adminTeachDispute: (token, body) => call('POST', '/admin/teach/dispute', { token, body }),
     adminTeachDisputes: (token, { fragmentId, status } = {}) => {

@@ -775,6 +775,44 @@ body.chat-open footer {
   border-left: 3px solid color-mix(in srgb, currentColor 35%, transparent);
 }
 
+.admin-teach-experiment {
+  margin: 1.25rem 0;
+  padding: 0.5rem 0;
+}
+
+.admin-teach-experiment summary {
+  cursor: pointer;
+  font-weight: 600;
+}
+
+.admin-teach-session-log {
+  max-height: 22rem;
+  overflow: auto;
+  margin: 0.75rem 0;
+  padding: 0.65rem 0.75rem;
+  border-left: 3px solid color-mix(in srgb, currentColor 35%, transparent);
+  display: flex;
+  flex-direction: column;
+  gap: 0.55rem;
+  white-space: pre-wrap;
+}
+
+.admin-teach-msg.bi {
+  opacity: 0.95;
+}
+
+.admin-teach-session-compose {
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+  margin: 0.75rem 0 1.25rem;
+}
+
+.admin-teach-session-compose textarea {
+  width: 100%;
+  box-sizing: border-box;
+}
+
 .admin-teach-label {
   display: flex;
   flex-direction: column;

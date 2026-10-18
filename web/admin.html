@@ -40,18 +40,33 @@
         </table>
       </div>
 
-      <h2 class="admin-teach-heading">Обучение Би</h2>
-      <p class="note">Buddy-018 · шаг 7A. Цепочка F01–F15 (порядок программы v002). Один фрагмент или вся цепочка по шагам. Техсбой Экзаменатора: автоповтор того же блока, префикс не перепрогоняется; Создателя не зовём. Стоп для Создателя — провал учения или открытое разногласие. «Не согласен» → журнал (open). Загрузка файлов, Методист-перестановка, роли проверяющих — следующие фазы.</p>
+      <h2 class="admin-teach-heading">Обучение Би · сессия</h2>
+      <p class="note">Buddy-018 · шаг 8A. Сначала корпус Notion (все главы каталога), затем задачи <strong>по одной от Создателя</strong>. Би может задавать вопросы на понимание. Без Методиста и автоэкзамена.</p>
       <div class="admin-teach-controls">
-        <label class="admin-teach-label" for="admin-teach-fragment">Учебный фрагмент
-          <select id="admin-teach-fragment"></select>
-        </label>
-        <button type="button" class="btn btn-primary" id="admin-teach-run">Начать обучение</button>
-        <button type="button" class="btn" id="admin-teach-chain">Запустить цепочку F01–F15</button>
+        <button type="button" class="btn btn-primary" id="admin-teach-session-start">Загрузить корпус и начать</button>
+        <button type="button" class="btn" id="admin-teach-session-close" hidden>Закрыть сессию</button>
       </div>
-      <p id="admin-teach-status" class="note" hidden></p>
-      <div id="admin-teach-chain-status" class="note" hidden></div>
-      <div id="admin-teach-result" class="admin-teach-result" hidden></div>
+      <p id="admin-teach-session-status" class="note" hidden></p>
+      <div id="admin-teach-session-log" class="admin-teach-session-log" hidden></div>
+      <div id="admin-teach-session-compose" class="admin-teach-session-compose" hidden>
+        <textarea id="admin-teach-session-input" rows="3" placeholder="Задача или реплика Создателя…"></textarea>
+        <button type="button" class="btn btn-primary" id="admin-teach-session-send">Отправить Би</button>
+      </div>
+
+      <details class="admin-teach-experiment">
+        <summary>Эксперимент · цепочка F01–F15 (шаг 7A)</summary>
+        <p class="note">Автоцикл Методист/Экзаменатор/Ученик. Техсбой — автоповтор блока; стоп для Создателя — провал учения или разногласие.</p>
+        <div class="admin-teach-controls">
+          <label class="admin-teach-label" for="admin-teach-fragment">Учебный фрагмент
+            <select id="admin-teach-fragment"></select>
+          </label>
+          <button type="button" class="btn btn-primary" id="admin-teach-run">Начать обучение</button>
+          <button type="button" class="btn" id="admin-teach-chain">Запустить цепочку F01–F15</button>
+        </div>
+        <p id="admin-teach-status" class="note" hidden></p>
+        <div id="admin-teach-chain-status" class="note" hidden></div>
+        <div id="admin-teach-result" class="admin-teach-result" hidden></div>
+      </details>
 
       <h2 class="admin-teach-heading">Журнал разногласий</h2>
       <p class="note">Сохранённые замечания Создателя. Можно обсудить с Би, добавить реплику или закрыть с подтверждённым выводом. Ручной ввод — если экзамен не сохранился, а замечание нужно привязать к задаче.</p>
@@ -83,7 +98,7 @@
   <footer>
     <a href="./">Buddy</a>
     <a href="https://github.com/jfeldman777/buddy">Исходный код</a>
-    <span>Alpha 0.01 · версия <span data-version>026</span></span>
+    <span>Alpha 0.01 · версия <span data-version>027</span></span>
     <button type="button" class="link-button" data-check-update>Проверить обновления</button>
   </footer>
 </body>

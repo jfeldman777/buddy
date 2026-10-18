@@ -16,6 +16,13 @@ const teachFragment = $('admin-teach-fragment');
 const teachBtn = $('admin-teach-run');
 const teachChainBtn = $('admin-teach-chain');
 const teachChainStatus = $('admin-teach-chain-status');
+const teachSessionStatus = $('admin-teach-session-status');
+const teachSessionLog = $('admin-teach-session-log');
+const teachSessionCompose = $('admin-teach-session-compose');
+const teachSessionInput = $('admin-teach-session-input');
+const teachSessionStartBtn = $('admin-teach-session-start');
+const teachSessionSendBtn = $('admin-teach-session-send');
+const teachSessionCloseBtn = $('admin-teach-session-close');
 const disputesList = $('admin-disputes-list');
 const disputeDetail = $('admin-dispute-detail');
 const disputeManual = $('admin-dispute-manual');
@@ -23,6 +30,8 @@ const disputeManual = $('admin-dispute-manual');
 const storage = await openStorage();
 let session = null;
 let teachRunning = false;
+let teachSession = null;
+let teachSessionBusy = false;
 const disputeStatusRu = {
   open: 'открыто',
   resolved_bi_error: 'закрыто: ошибка Би',
@@ -39,6 +48,112 @@ function showStatus(text) {
 function showTeachStatus(text) {
   teachStatus.textContent = text;
   teachStatus.hidden = !text;
+}
+
+function showTeachSessionStatus(text) {
+  if (!teachSessionStatus) return;
+  teachSessionStatus.textContent = text;
+  teachSessionStatus.hidden = !text;
+}
+
+function renderTeachSessionLog(teach) {
+  if (!teachSessionLog) return;
+  teachSessionLog.replaceChildren();
+  const msgs = teach?.messages || [];
+  if (!msgs.length) {
+    teachSessionLog.hidden = true;
+    return;
+  }
+  teachSessionLog.hidden = false;
+  for (const m of msgs) {
+    const who = m.role === 'bi' ? 'Би' : 'Создатель';
+    const kind = m.role === 'bi' && m.kind === 'question' ? ' (вопрос)' : '';
+    const row = el('div', m.role === 'bi' ? 'admin-teach-msg bi' : 'admin-teach-msg creator');
+    row.append(el('strong', '', `${who}${kind}`));
+    row.append(document.createTextNode(`: ${m.text}`));
+    teachSessionLog.append(row);
+  }
+  teachSessionLog.scrollTop = teachSessionLog.scrollHeight;
+}
+
+function setTeachSessionUi(teach) {
+  teachSession = teach || null;
+  const ready = teach?.status === 'ready';
+  const open = teach && teach.status !== 'closed';
+  if (teachSessionCompose) teachSessionCompose.hidden = !ready;
+  if (teachSessionCloseBtn) teachSessionCloseBtn.hidden = !open;
+  if (teachSessionStartBtn) teachSessionStartBtn.disabled = teachSessionBusy;
+  if (teachSessionSendBtn) teachSessionSendBtn.disabled = teachSessionBusy || !ready;
+  renderTeachSessionLog(teach);
+}
+
+async function runTeachSessionStart() {
+  if (!session?.token || teachSessionBusy) return;
+  teachSessionBusy = true;
+  setTeachSessionUi(teachSession);
+  showTeachSessionStatus('Старт сессии…');
+  try {
+    const { session: started } = await api.adminTeachSessionStart(session.token, {});
+    let current = started;
+    setTeachSessionUi(current);
+    while (current.status === 'ingesting' && current.progress && !current.progress.done) {
+      showTeachSessionStatus(
+        `Корпус: ${current.progress.loaded}/${current.progress.total}…`,
+      );
+      const step = await api.adminTeachSessionIngest(session.token, current.id);
+      current = step.session;
+      setTeachSessionUi(current);
+      if (step.done) break;
+    }
+    showTeachSessionStatus(
+      `Корпус готов (${current.progress?.loaded || 0} глав). Пишите задачу или реплику — Би может спросить.`,
+    );
+    setTeachSessionUi(current);
+  } catch (error) {
+    console.warn(error);
+    showTeachSessionStatus(error.message || 'Не удалось начать учебную сессию.');
+  } finally {
+    teachSessionBusy = false;
+    setTeachSessionUi(teachSession);
+  }
+}
+
+async function runTeachSessionSend() {
+  if (!session?.token || !teachSession?.id || teachSessionBusy) return;
+  const text = (teachSessionInput?.value || '').trim();
+  if (!text) return;
+  teachSessionBusy = true;
+  setTeachSessionUi(teachSession);
+  showTeachSessionStatus('Би думает…');
+  try {
+    if (teachSessionInput) teachSessionInput.value = '';
+    const result = await api.adminTeachSessionTurn(session.token, teachSession.id, text);
+    setTeachSessionUi(result.session);
+    const kindRu = result.reply?.kind === 'question' ? 'вопрос на понимание' : 'ответ';
+    showTeachSessionStatus(`Би: ${kindRu}.`);
+  } catch (error) {
+    console.warn(error);
+    showTeachSessionStatus(error.message || 'Ход не удался.');
+  } finally {
+    teachSessionBusy = false;
+    setTeachSessionUi(teachSession);
+  }
+}
+
+async function runTeachSessionClose() {
+  if (!session?.token || !teachSession?.id || teachSessionBusy) return;
+  teachSessionBusy = true;
+  try {
+    const { session: closed } = await api.adminTeachSessionClose(session.token, teachSession.id);
+    setTeachSessionUi(closed);
+    showTeachSessionStatus('Сессия закрыта.');
+  } catch (error) {
+    console.warn(error);
+    showTeachSessionStatus(error.message || 'Не удалось закрыть сессию.');
+  } finally {
+    teachSessionBusy = false;
+    setTeachSessionUi(teachSession);
+  }
 }
 
 const roles = { user: 'пользователь', admin: 'администратор' };
@@ -586,7 +701,17 @@ $('admin-logout').addEventListener('click', () => act(async () => {
   await show();
 }));
 
-teachBtn.addEventListener('click', () => act(runTeachCycle));
+teachSessionStartBtn?.addEventListener('click', () => act(runTeachSessionStart));
+teachSessionSendBtn?.addEventListener('click', () => act(runTeachSessionSend));
+teachSessionCloseBtn?.addEventListener('click', () => act(runTeachSessionClose));
+teachSessionInput?.addEventListener('keydown', (ev) => {
+  if (ev.key === 'Enter' && (ev.ctrlKey || ev.metaKey)) {
+    ev.preventDefault();
+    act(runTeachSessionSend);
+  }
+});
+
+teachBtn?.addEventListener('click', () => act(runTeachCycle));
 teachChainBtn?.addEventListener('click', () => act(runTeachChain));
 
 $('admin-disputes-refresh')?.addEventListener('click', () => act(loadDisputes));

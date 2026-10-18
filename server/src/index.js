@@ -27,6 +27,14 @@ import {
   listTeachRulings,
 } from './teach/disputes.js';
 import { startTeachChain, continueTeachChain, getTeachChain, listTeachChains } from './teach/chain.js';
+import {
+  startTeachSession,
+  ingestTeachSessionPage,
+  teachSessionTurn,
+  getTeachSession,
+  listTeachSessions,
+  closeTeachSession,
+} from './teach/session.js';
 import { listFragmentSpecs, DEFAULT_CHAIN_IDS } from './teach/fragmentSpecs.js';
 
 const iso = (env) => new Date(now(env)).toISOString();
@@ -434,6 +442,62 @@ const routes = {
     const session = await requireAdmin(request, env);
     await rateLimit(env, 'LIMIT_USER', session.userId);
     return json({ runs: await listTeachChains(env) });
+  },
+
+  // Step 8A: Creator↔Bi teaching session (corpus then one-by-one tasks).
+  'POST /admin/teach/session/start': async (request, env) => {
+    const session = await requireAdmin(request, env);
+    await rateLimit(env, 'LIMIT_USER', session.userId);
+    const body = await request.json().catch(() => ({}));
+    const teach = await startTeachSession(env, {
+      adminId: session.userId,
+      pageIds: body?.pageIds,
+    });
+    await env.DB.prepare('INSERT INTO admin_audit (admin_id, action, created_at) VALUES (?1, ?2, ?3)')
+      .bind(session.userId, `teach_session_start:${teach.id}`, iso(env)).run();
+    return json({ session: teach }, 201);
+  },
+
+  'POST /admin/teach/session/ingest': async (request, env) => {
+    const session = await requireAdmin(request, env);
+    await rateLimit(env, 'LIMIT_USER', session.userId);
+    const body = await request.json().catch(() => ({}));
+    const result = await ingestTeachSessionPage(env, body?.sessionId);
+    return json(result);
+  },
+
+  'POST /admin/teach/session/turn': async (request, env) => {
+    const session = await requireAdmin(request, env);
+    await rateLimit(env, 'LIMIT_USER', session.userId);
+    const body = await request.json().catch(() => ({}));
+    const result = await teachSessionTurn(env, body?.sessionId, {
+      adminId: session.userId,
+      text: body?.text,
+    });
+    await env.DB.prepare('INSERT INTO admin_audit (admin_id, action, created_at) VALUES (?1, ?2, ?3)')
+      .bind(session.userId, `teach_session_turn:${body?.sessionId}`, iso(env)).run();
+    return json(result);
+  },
+
+  'GET /admin/teach/session': async (request, env) => {
+    const session = await requireAdmin(request, env);
+    await rateLimit(env, 'LIMIT_USER', session.userId);
+    const id = new URL(request.url).searchParams.get('id') || '';
+    return json({ session: await getTeachSession(env, id) });
+  },
+
+  'GET /admin/teach/sessions': async (request, env) => {
+    const session = await requireAdmin(request, env);
+    await rateLimit(env, 'LIMIT_USER', session.userId);
+    return json({ sessions: await listTeachSessions(env, { adminId: session.userId }) });
+  },
+
+  'POST /admin/teach/session/close': async (request, env) => {
+    const session = await requireAdmin(request, env);
+    await rateLimit(env, 'LIMIT_USER', session.userId);
+    const body = await request.json().catch(() => ({}));
+    const teach = await closeTeachSession(env, body?.sessionId);
+    return json({ session: teach });
   },
 };
 
