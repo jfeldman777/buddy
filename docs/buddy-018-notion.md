@@ -108,6 +108,7 @@
 - Таблица `teach_corpus_documents` + `teach_sessions.corpus_kind` (миграция `0011`)
 - UI: загрузка PDF/DOCX → извлечение в браузере (`teachCorpusExtract.js`) → «Начать сессию на файлах»
 - Тесты: `server/test/teachCorpusFiles.test.mjs`
+- В ходе обучения Би **сам ищет** по всему Канону (`action: search`, до 3 раундов), затем отвечает Создателю — без автоподстановки глав в промпт.
 
 **Не в этом срезе:** R2 для оригиналов, OCR сканов, `.doc`, Методист.
 

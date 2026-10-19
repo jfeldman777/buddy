@@ -72,6 +72,13 @@ function renderTeachSessionLog(teach) {
   }
   teachSessionLog.hidden = false;
   for (const m of msgs) {
+    if (m.role === 'search') {
+      const row = el('div', 'admin-teach-msg search');
+      row.append(el('strong', '', 'Канон'));
+      row.append(document.createTextNode(`: ${m.text}`));
+      teachSessionLog.append(row);
+      continue;
+    }
     const who = m.role === 'bi' ? 'Би' : 'Создатель';
     const kind = m.role === 'bi' && m.kind === 'question' ? ' (вопрос)' : '';
     const row = el('div', m.role === 'bi' ? 'admin-teach-msg bi' : 'admin-teach-msg creator');
@@ -213,7 +220,10 @@ async function runTeachSessionSend() {
     const result = await api.adminTeachSessionTurn(session.token, teachSession.id, text);
     setTeachSessionUi(result.session);
     const kindRu = result.reply?.kind === 'question' ? 'вопрос на понимание' : 'ответ';
-    showTeachSessionStatus(`Би: ${kindRu}.`);
+    const searches = result.searches?.length
+      ? ` Поисков по Канону: ${result.searches.length}.`
+      : '';
+    showTeachSessionStatus(`Би: ${kindRu}.${searches}`);
   } catch (error) {
     console.warn(error);
     showTeachSessionStatus(error.message || 'Ход не удался.');

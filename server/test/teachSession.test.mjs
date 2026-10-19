@@ -4,7 +4,7 @@ import { createEnv, registerWithPasskey, loginWithPasskey } from './harness.mjs'
 import { createAuthenticator } from './authenticator.mjs';
 import { NOTION_API } from '../src/notion/readPage.js';
 import { TUAI_INTRO_PAGES } from '../src/notion/tuaiIntroCatalog.js';
-import { formatCorpusForPrompt, buildTeachSessionPrompt } from '../src/teach/sessionPrompts.js';
+import { formatCorpusForPrompt, buildTeachSessionPrompt, searchCorpusExcerpts } from '../src/teach/sessionPrompts.js';
 
 async function asAdmin(api) {
   const passkey = await createAuthenticator();
@@ -56,6 +56,7 @@ function installNotionAndChatMocks(api) {
         choices: [{
           message: {
             content: JSON.stringify({
+              action: 'reply',
               utterance: 'Уточните, пожалуйста: какой уровень из корпуса имеется в виду?',
               kind: 'question',
             }),
@@ -69,24 +70,36 @@ function installNotionAndChatMocks(api) {
   return { getOpenaiCalls: () => openaiCalls };
 }
 
-test('formatCorpusForPrompt: оглавление и окно текста', () => {
+test('formatCorpusForPrompt: только оглавление без автоподстановки тел', () => {
   const text = formatCorpusForPrompt([
     { n: 1, title: 'A', text: 'aaa', status: 'ok' },
     { n: 2, title: 'B', text: 'bbb', status: 'ok' },
   ]);
   assert.match(text, /Оглавление/);
-  assert.match(text, /Глава 1/);
-  assert.match(text, /bbb/);
+  assert.match(text, /1\. A/);
+  assert.doesNotMatch(text, /\baaa\b/);
 });
 
-test('buildTeachSessionPrompt: Би может спрашивать, без автоэкзамена', () => {
+test('searchCorpusExcerpts: ищет по всему корпусу', () => {
+  const pages = [
+    { n: 1, title: '01_Ввод', text: 'общие слова про знакомство и этикет '.repeat(40), status: 'ok' },
+    { n: 4, title: '04_Уровни', text: 'Классификация уровней ситуации в Каноне: точка отсечения и шкала.', status: 'ok' },
+    { n: 12, title: '12_Другое', text: 'совсем иная тема про кулинарию и рецепты', status: 'ok' },
+  ];
+  const hit = searchCorpusExcerpts(pages, 'нужна уровневая классификация и шкала отсечения');
+  assert.ok(hit.parts.some((p) => /Классификация уровней/i.test(p)));
+  assert.ok(hit.sourcePages.includes(4));
+});
+
+test('buildTeachSessionPrompt: Би сам ищет по Канону в обучении', () => {
   const p = buildTeachSessionPrompt({
     corpusTitle: 'ТУАИ',
     pages: [{ n: 1, title: 'A', text: 'материал', status: 'ok' }],
     messages: [{ role: 'creator', text: 'Объясни грани.' }],
   });
-  assert.match(p.system, /вопросы на понимание/i);
-  assert.match(p.system, /Задачи и проверки даёт только Создатель/i);
+  assert.match(p.system, /ищите по всему корпусу/i);
+  assert.match(p.system, /action":"search/);
+  assert.match(p.system, /Создатель даёт задачи по одной/i);
   assert.match(p.system, /не оценивайте себя рубриками/i);
 });
 

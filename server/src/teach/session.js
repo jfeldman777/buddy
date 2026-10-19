@@ -3,7 +3,13 @@ import { HttpError } from '../http.js';
 import { chatJson } from '../bi/openai.js';
 import { readNotionPage } from '../notion/readPage.js';
 import { TUAI_INTRO_PAGES, TUAI_INTRO_CORPUS_ID, TUAI_INTRO_CORPUS_TITLE } from '../notion/tuaiIntroCatalog.js';
-import { buildTeachSessionPrompt, TEACH_SESSION_STRATEGY } from './sessionPrompts.js';
+import {
+  buildTeachSessionPrompt,
+  TEACH_SESSION_STRATEGY,
+  TEACH_SEARCH_ROUNDS_MAX,
+  searchCorpusExcerpts,
+  parseTeachModelAction,
+} from './sessionPrompts.js';
 import {
   getCorpusDocumentsByIds,
   listCorpusDocuments,
@@ -313,26 +319,66 @@ export async function teachSessionTurn(env, sessionId, { adminId, text } = {}) {
   session.messages.push({ role: 'creator', text: creatorText, at: nowIso() });
 
   const pages = await pagesForPrompt(env, session);
-  const prompt = buildTeachSessionPrompt({
-    corpusTitle: session.corpusTitle,
-    pages,
-    messages: session.messages,
-  });
+  let searchPack = null;
+  let searchesUsed = 0;
+  const usageTotal = { inputTokens: 0, outputTokens: 0, costMicros: 0 };
+  const searchLog = [];
 
-  const { json: reply, usage } = await chatJson(env, {
-    sessionId: `teach-session:${session.id}`,
-    speaker: 'bi',
-    system: prompt.system,
-    user: prompt.user,
-  });
+  let final = null;
+  for (let round = 0; round < TEACH_SEARCH_ROUNDS_MAX + 1; round += 1) {
+    const forceReply = searchesUsed >= TEACH_SEARCH_ROUNDS_MAX || round >= TEACH_SEARCH_ROUNDS_MAX;
+    const prompt = buildTeachSessionPrompt({
+      corpusTitle: session.corpusTitle,
+      pages,
+      messages: session.messages,
+      searchPack,
+      searchRoundsLeft: Math.max(0, TEACH_SEARCH_ROUNDS_MAX - searchesUsed),
+      forceReply,
+    });
 
-  const utterance = typeof reply.utterance === 'string' ? reply.utterance.trim() : '';
-  if (!utterance || utterance.length > TEXT_MAX) {
-    throw new HttpError(502, 'model_bad_json', 'Би не дал понятной реплики.');
+    const { json: raw, usage } = await chatJson(env, {
+      sessionId: `teach-session:${session.id}`,
+      speaker: 'bi',
+      system: prompt.system,
+      user: prompt.user,
+    });
+    usageTotal.inputTokens += usage?.inputTokens || 0;
+    usageTotal.outputTokens += usage?.outputTokens || 0;
+    usageTotal.costMicros += usage?.costMicros || 0;
+
+    const parsed = parseTeachModelAction(raw);
+    if (parsed.action === 'search' && !forceReply) {
+      const query = (parsed.queries || []).join(' · ') || creatorText;
+      const hit = searchCorpusExcerpts(pages, query);
+      searchPack = {
+        query,
+        text: hit.text,
+        sourcePages: hit.sourcePages,
+      };
+      searchesUsed += 1;
+      searchLog.push({ query, sourcePages: hit.sourcePages, chunkCount: hit.chunkCount });
+      session.messages.push({
+        role: 'search',
+        text: `Поиск по Канону: «${query}» → главы ${hit.sourcePages.join(', ') || '—'}`,
+        at: nowIso(),
+      });
+      continue;
+    }
+
+    const utterance = parsed.utterance || (typeof raw?.utterance === 'string' ? raw.utterance.trim() : '');
+    if (!utterance || utterance.length > TEXT_MAX) {
+      throw new HttpError(502, 'model_bad_json', 'Би не дал понятной реплики.');
+    }
+    const kind = ['answer', 'question', 'other'].includes(parsed.kind) ? parsed.kind : 'other';
+    final = { utterance, kind };
+    break;
   }
-  const kind = ['answer', 'question', 'other'].includes(reply.kind) ? reply.kind : 'other';
 
-  session.messages.push({ role: 'bi', text: utterance, kind, at: nowIso() });
+  if (!final) {
+    throw new HttpError(502, 'model_bad_json', 'Би не завершил ход ответом Создателю.');
+  }
+
+  session.messages.push({ role: 'bi', text: final.utterance, kind: final.kind, at: nowIso() });
   if (session.messages.length > MESSAGES_KEEP) {
     session.messages = session.messages.slice(-MESSAGES_KEEP);
   }
@@ -341,8 +387,9 @@ export async function teachSessionTurn(env, sessionId, { adminId, text } = {}) {
 
   return {
     session: withProgress(session),
-    reply: { utterance, kind },
-    usage,
+    reply: final,
+    searches: searchLog,
+    usage: usageTotal,
     isolation: {
       wroteChatMemory: false,
       wroteBiTeachings: false,

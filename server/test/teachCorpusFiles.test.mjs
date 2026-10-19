@@ -31,7 +31,13 @@ test('corpus upload + file session turn without Notion ingest', async () => {
     if (String(url).includes('openai.com')) {
       return Response.json({
         choices: [{
-          message: { content: JSON.stringify({ utterance: 'Четыре грани: …', kind: 'answer' }) },
+          message: {
+            content: JSON.stringify({
+              action: 'reply',
+              utterance: 'Четыре грани: …',
+              kind: 'answer',
+            }),
+          },
         }],
         usage: { prompt_tokens: 10, completion_tokens: 8 },
       });
