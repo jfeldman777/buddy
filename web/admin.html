@@ -41,11 +41,18 @@
       </div>
 
       <h2 class="admin-teach-heading">Обучение Би · сессия</h2>
-      <p class="note">Buddy-018 · шаг 8A. Сначала корпус Notion (все главы каталога), затем задачи <strong>по одной от Создателя</strong>. Би может задавать вопросы на понимание. Без Методиста и автоэкзамена.</p>
-      <div class="admin-teach-controls">
-        <button type="button" class="btn btn-primary" id="admin-teach-session-start">Загрузить корпус и начать</button>
+      <p class="note">Buddy-018 · шаг 8A / 8A-files. Основной путь: корпус из <strong>PDF и DOCX</strong> (~30 файлов), затем задачи <strong>по одной от Создателя</strong>. Би может спрашивать. Notion-каталог — запасной источник.</p>
+      <div class="admin-teach-controls admin-teach-corpus-controls">
+        <label class="admin-teach-label" for="admin-teach-corpus-files">Файлы PDF / DOCX
+          <input type="file" id="admin-teach-corpus-files" accept=".pdf,.docx,application/pdf,application/vnd.openxmlformats-officedocument.wordprocessingml.document" multiple />
+        </label>
+        <button type="button" class="btn btn-primary" id="admin-teach-corpus-upload">Загрузить в корпус</button>
+        <button type="button" class="btn" id="admin-teach-session-files">Начать сессию на файлах</button>
+        <button type="button" class="btn" id="admin-teach-corpus-clear">Очистить файловый корпус</button>
+        <button type="button" class="btn" id="admin-teach-session-start">Сессия на Notion (13 глав)</button>
         <button type="button" class="btn" id="admin-teach-session-close" hidden>Закрыть сессию</button>
       </div>
+      <p id="admin-teach-corpus-list" class="note" hidden></p>
       <p id="admin-teach-session-status" class="note" hidden></p>
       <div id="admin-teach-session-log" class="admin-teach-session-log" hidden></div>
       <div id="admin-teach-session-compose" class="admin-teach-session-compose" hidden>
@@ -98,7 +105,7 @@
   <footer>
     <a href="./">Buddy</a>
     <a href="https://github.com/jfeldman777/buddy">Исходный код</a>
-    <span>Alpha 0.01 · версия <span data-version>027</span></span>
+    <span>Alpha 0.01 · версия <span data-version>028</span></span>
     <button type="button" class="link-button" data-check-update>Проверить обновления</button>
   </footer>
 </body>

@@ -76,6 +76,9 @@ export function createApi(base, fetchImpl = (...args) => fetch(...args)) {
     adminTeachChains: (token) => call('GET', '/admin/teach/chains', { token }),
     /** Step 8A: Creator↔Bi teaching session. */
     adminTeachSessionStart: (token, body = {}) => call('POST', '/admin/teach/session/start', { token, body }),
+    adminTeachCorpusDocuments: (token) => call('GET', '/admin/teach/corpus/documents', { token }),
+    adminTeachCorpusAdd: (token, body) => call('POST', '/admin/teach/corpus/documents', { token, body }),
+    adminTeachCorpusClear: (token) => call('POST', '/admin/teach/corpus/clear', { token, body: {} }),
     adminTeachSessionIngest: (token, sessionId) => call('POST', '/admin/teach/session/ingest', {
       token,
       body: { sessionId },

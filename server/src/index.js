@@ -35,6 +35,11 @@ import {
   listTeachSessions,
   closeTeachSession,
 } from './teach/session.js';
+import {
+  addCorpusDocument,
+  listCorpusDocuments,
+  clearCorpusDocuments,
+} from './teach/corpusDocuments.js';
 import { listFragmentSpecs, DEFAULT_CHAIN_IDS } from './teach/fragmentSpecs.js';
 
 const iso = (env) => new Date(now(env)).toISOString();
@@ -451,11 +456,46 @@ const routes = {
     const body = await request.json().catch(() => ({}));
     const teach = await startTeachSession(env, {
       adminId: session.userId,
+      source: body?.source === 'files' ? 'files' : 'notion',
       pageIds: body?.pageIds,
+      documentIds: body?.documentIds,
     });
     await env.DB.prepare('INSERT INTO admin_audit (admin_id, action, created_at) VALUES (?1, ?2, ?3)')
-      .bind(session.userId, `teach_session_start:${teach.id}`, iso(env)).run();
+      .bind(session.userId, `teach_session_start:${teach.corpusKind}:${teach.id}`, iso(env)).run();
     return json({ session: teach }, 201);
+  },
+
+  'GET /admin/teach/corpus/documents': async (request, env) => {
+    const session = await requireAdmin(request, env);
+    await rateLimit(env, 'LIMIT_USER', session.userId);
+    const documents = await listCorpusDocuments(env, { adminId: session.userId, withText: false });
+    return json({ documents, count: documents.length });
+  },
+
+  'POST /admin/teach/corpus/documents': async (request, env) => {
+    const session = await requireAdmin(request, env);
+    await rateLimit(env, 'LIMIT_USER', session.userId);
+    // Extracted text from PDF/DOCX can be large (~200k chars).
+    const body = await readJson(request, { maxBytes: 700_000 });
+    const document = await addCorpusDocument(env, {
+      adminId: session.userId,
+      filename: body?.filename,
+      title: body?.title,
+      kind: body?.kind,
+      text: body?.text,
+    });
+    await env.DB.prepare('INSERT INTO admin_audit (admin_id, action, created_at) VALUES (?1, ?2, ?3)')
+      .bind(session.userId, `teach_corpus_add:${document.kind}:${document.id}`, iso(env)).run();
+    return json({ document }, 201);
+  },
+
+  'POST /admin/teach/corpus/clear': async (request, env) => {
+    const session = await requireAdmin(request, env);
+    await rateLimit(env, 'LIMIT_USER', session.userId);
+    await clearCorpusDocuments(env, { adminId: session.userId });
+    await env.DB.prepare('INSERT INTO admin_audit (admin_id, action, created_at) VALUES (?1, ?2, ?3)')
+      .bind(session.userId, 'teach_corpus_clear', iso(env)).run();
+    return json({ cleared: true });
   },
 
   'POST /admin/teach/session/ingest': async (request, env) => {

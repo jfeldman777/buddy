@@ -813,6 +813,14 @@ body.chat-open footer {
   box-sizing: border-box;
 }
 
+#admin-teach-corpus-list {
+  white-space: pre-wrap;
+}
+
+.admin-teach-corpus-controls input[type='file'] {
+  max-width: 100%;
+}
+
 .admin-teach-label {
   display: flex;
   flex-direction: column;

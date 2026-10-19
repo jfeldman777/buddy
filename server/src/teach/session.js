@@ -1,9 +1,14 @@
-// Buddy-018 step 8A: Creator↔Bi teaching session — corpus ingest then turns.
+// Buddy-018 step 8A / 8A-files: Creator↔Bi teaching session — corpus then turns.
 import { HttpError } from '../http.js';
 import { chatJson } from '../bi/openai.js';
 import { readNotionPage } from '../notion/readPage.js';
 import { TUAI_INTRO_PAGES, TUAI_INTRO_CORPUS_ID, TUAI_INTRO_CORPUS_TITLE } from '../notion/tuaiIntroCatalog.js';
 import { buildTeachSessionPrompt, TEACH_SESSION_STRATEGY } from './sessionPrompts.js';
+import {
+  getCorpusDocumentsByIds,
+  listCorpusDocuments,
+  documentsToPages,
+} from './corpusDocuments.js';
 
 const TEXT_MAX = 8_000;
 const MESSAGES_KEEP = 80;
@@ -25,8 +30,9 @@ function mapSession(row) {
     id: row.id,
     adminId: row.admin_id,
     status: row.status,
+    corpusKind: row.corpus_kind || 'notion',
     corpusId: row.corpus_id || '',
-    corpusTitle: TUAI_INTRO_CORPUS_TITLE,
+    corpusTitle: row.corpus_kind === 'files' ? 'Файловый корпус (PDF/DOCX)' : TUAI_INTRO_CORPUS_TITLE,
     pageIds: parseJson(row.page_ids_json, []),
     ingestIndex: Number(row.ingest_index) || 0,
     pages: parseJson(row.pages_json, []),
@@ -39,14 +45,16 @@ function mapSession(row) {
 
 function withProgress(session) {
   const total = (session.pageIds || []).length;
-  const loaded = (session.pages || []).length;
+  const loaded = session.corpusKind === 'files'
+    ? total
+    : (session.pages || []).length;
   return {
     ...session,
     progress: {
       total,
       loaded,
       done: session.status === 'ready' || session.status === 'closed' || (total > 0 && loaded >= total),
-      nextPageId: session.status === 'ingesting' && session.ingestIndex < total
+      nextPageId: session.corpusKind === 'notion' && session.status === 'ingesting' && session.ingestIndex < total
         ? session.pageIds[session.ingestIndex]
         : null,
     },
@@ -64,14 +72,15 @@ async function loadSession(env, sessionId) {
 async function saveSession(env, session) {
   await env.DB.prepare(
     `UPDATE teach_sessions
-     SET status = ?1, ingest_index = ?2, pages_json = ?3, messages_json = ?4, updated_at = ?5
-     WHERE id = ?6`,
+     SET status = ?1, ingest_index = ?2, pages_json = ?3, messages_json = ?4, updated_at = ?5, corpus_kind = ?6
+     WHERE id = ?7`,
   ).bind(
     session.status,
     session.ingestIndex,
     JSON.stringify(session.pages || []),
     JSON.stringify(session.messages || []),
     session.updatedAt,
+    session.corpusKind || 'notion',
     session.id,
   ).run();
   return withProgress(session);
@@ -94,14 +103,85 @@ function resolvePageIds(pageIds) {
   return TUAI_INTRO_PAGES.map((p) => p.pageId);
 }
 
-export async function startTeachSession(env, { adminId, pageIds } = {}) {
+async function resolveFileDocumentIds(env, adminId, documentIds) {
+  if (Array.isArray(documentIds) && documentIds.length) {
+    const docs = await getCorpusDocumentsByIds(env, { adminId, ids: documentIds, withText: false });
+    return docs.map((d) => d.id);
+  }
+  const all = await listCorpusDocuments(env, { adminId, withText: false });
+  if (!all.length) {
+    throw new HttpError(400, 'teach_corpus_empty_set', 'Сначала загрузите PDF/DOCX в файловый корпус.');
+  }
+  return all.map((d) => d.id);
+}
+
+async function pagesForPrompt(env, session) {
+  if (session.corpusKind === 'files') {
+    const docs = await getCorpusDocumentsByIds(env, {
+      adminId: session.adminId,
+      ids: session.pageIds,
+      withText: true,
+    });
+    return documentsToPages(docs);
+  }
+  return session.pages || [];
+}
+
+/**
+ * @param {{ adminId: string, source?: 'notion'|'files', pageIds?: string[], documentIds?: string[] }} opts
+ */
+export async function startTeachSession(env, { adminId, source = 'notion', pageIds, documentIds } = {}) {
   const admin = String(adminId || '');
   if (!admin) throw new HttpError(401, 'unauthorized', 'Нужен администратор.');
+  const kind = source === 'files' ? 'files' : 'notion';
+
+  if (kind === 'files') {
+    const ids = await resolveFileDocumentIds(env, admin, documentIds);
+    const docs = await getCorpusDocumentsByIds(env, { adminId: admin, ids, withText: false });
+    const metaPages = documentsToPages(docs.map((d) => ({ ...d, text: '' }))).map((p, i) => ({
+      ...p,
+      charCount: docs[i].charCount,
+      status: docs[i].charCount > 0 ? 'ok' : 'incomplete',
+    }));
+    const session = {
+      id: crypto.randomUUID(),
+      adminId: admin,
+      status: 'ready',
+      corpusKind: 'files',
+      corpusId: 'files-upload',
+      corpusTitle: 'Файловый корпус (PDF/DOCX)',
+      pageIds: ids,
+      ingestIndex: ids.length,
+      pages: metaPages,
+      messages: [],
+      createdAt: nowIso(),
+      updatedAt: nowIso(),
+    };
+    await env.DB.prepare(
+      `INSERT INTO teach_sessions
+        (id, admin_id, status, corpus_id, page_ids_json, ingest_index, pages_json, messages_json, created_at, updated_at, corpus_kind)
+       VALUES (?1,?2,?3,?4,?5,?6,?7,?8,?9,?9,?10)`,
+    ).bind(
+      session.id,
+      session.adminId,
+      session.status,
+      session.corpusId,
+      JSON.stringify(session.pageIds),
+      session.ingestIndex,
+      JSON.stringify(session.pages),
+      '[]',
+      session.createdAt,
+      session.corpusKind,
+    ).run();
+    return withProgress(session);
+  }
+
   const ids = resolvePageIds(pageIds);
   const session = {
     id: crypto.randomUUID(),
     adminId: admin,
     status: 'ingesting',
+    corpusKind: 'notion',
     corpusId: TUAI_INTRO_CORPUS_ID,
     corpusTitle: TUAI_INTRO_CORPUS_TITLE,
     pageIds: ids,
@@ -113,8 +193,8 @@ export async function startTeachSession(env, { adminId, pageIds } = {}) {
   };
   await env.DB.prepare(
     `INSERT INTO teach_sessions
-      (id, admin_id, status, corpus_id, page_ids_json, ingest_index, pages_json, messages_json, created_at, updated_at)
-     VALUES (?1,?2,?3,?4,?5,?6,?7,?8,?9,?9)`,
+      (id, admin_id, status, corpus_id, page_ids_json, ingest_index, pages_json, messages_json, created_at, updated_at, corpus_kind)
+     VALUES (?1,?2,?3,?4,?5,?6,?7,?8,?9,?9,?10)`,
   ).bind(
     session.id,
     session.adminId,
@@ -125,6 +205,7 @@ export async function startTeachSession(env, { adminId, pageIds } = {}) {
     '[]',
     '[]',
     session.createdAt,
+    session.corpusKind,
   ).run();
   return withProgress(session);
 }
@@ -141,9 +222,12 @@ export async function listTeachSessions(env, { adminId, limit = 10 } = {}) {
   return (results || []).map((r) => withProgress(mapSession(r)));
 }
 
-/** Load exactly one next catalog page into the session (Worker-safe). */
+/** Load exactly one next Notion catalog page (Worker-safe). Not used for file corpus. */
 export async function ingestTeachSessionPage(env, sessionId) {
   const session = await loadSession(env, sessionId);
+  if (session.corpusKind === 'files') {
+    return { session: withProgress(session), page: null, done: true };
+  }
   if (session.status === 'closed') {
     throw new HttpError(409, 'teach_session_closed', 'Сессия закрыта.');
   }
@@ -228,9 +312,10 @@ export async function teachSessionTurn(env, sessionId, { adminId, text } = {}) {
 
   session.messages.push({ role: 'creator', text: creatorText, at: nowIso() });
 
+  const pages = await pagesForPrompt(env, session);
   const prompt = buildTeachSessionPrompt({
     corpusTitle: session.corpusTitle,
-    pages: session.pages,
+    pages,
     messages: session.messages,
   });
 
@@ -274,4 +359,4 @@ export async function closeTeachSession(env, sessionId) {
   return withProgress(session);
 }
 
-export const __test = { resolvePageIds, mapSession, withProgress, formatCorpus: buildTeachSessionPrompt };
+export const __test = { resolvePageIds, mapSession, withProgress };

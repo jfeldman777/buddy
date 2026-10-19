@@ -2,6 +2,7 @@ import { registerServiceWorker } from './pwa.js';
 import { openStorage } from './storage.js';
 import { api } from './api.js';
 import { currentUser, signInWithPasskey, signOut } from './account.js';
+import { extractTeachFile } from './teachCorpusExtract.js';
 
 registerServiceWorker();
 
@@ -21,6 +22,11 @@ const teachSessionLog = $('admin-teach-session-log');
 const teachSessionCompose = $('admin-teach-session-compose');
 const teachSessionInput = $('admin-teach-session-input');
 const teachSessionStartBtn = $('admin-teach-session-start');
+const teachSessionFilesBtn = $('admin-teach-session-files');
+const teachCorpusUploadBtn = $('admin-teach-corpus-upload');
+const teachCorpusClearBtn = $('admin-teach-corpus-clear');
+const teachCorpusFiles = $('admin-teach-corpus-files');
+const teachCorpusList = $('admin-teach-corpus-list');
 const teachSessionSendBtn = $('admin-teach-session-send');
 const teachSessionCloseBtn = $('admin-teach-session-close');
 const disputesList = $('admin-disputes-list');
@@ -87,26 +93,103 @@ function setTeachSessionUi(teach) {
   renderTeachSessionLog(teach);
 }
 
-async function runTeachSessionStart() {
+async function refreshCorpusList() {
+  if (!session?.token || !teachCorpusList) return;
+  try {
+    const data = await api.adminTeachCorpusDocuments(session.token);
+    const docs = data.documents || [];
+    if (!docs.length) {
+      teachCorpusList.textContent = 'Файловый корпус пуст.';
+      teachCorpusList.hidden = false;
+      return;
+    }
+    const lines = docs.map((d, i) => `${i + 1}. ${d.filename} (${d.kind}, ${d.charCount} зн.)`);
+    teachCorpusList.textContent = `В корпусе ${docs.length} файл(ов):\n${lines.join('\n')}`;
+    teachCorpusList.hidden = false;
+  } catch (error) {
+    console.warn(error);
+    teachCorpusList.textContent = error.message || 'Не удалось прочитать корпус.';
+    teachCorpusList.hidden = false;
+  }
+}
+
+async function runCorpusUpload() {
+  if (!session?.token || teachSessionBusy) return;
+  const files = [...(teachCorpusFiles?.files || [])];
+  if (!files.length) {
+    showTeachSessionStatus('Выберите PDF или DOCX.');
+    return;
+  }
+  teachSessionBusy = true;
+  setTeachSessionUi(teachSession);
+  let ok = 0;
+  const errors = [];
+  try {
+    for (let i = 0; i < files.length; i += 1) {
+      const file = files[i];
+      showTeachSessionStatus(`Извлечение ${i + 1}/${files.length}: ${file.name}…`);
+      try {
+        const extracted = await extractTeachFile(file);
+        showTeachSessionStatus(`Загрузка на сервер ${i + 1}/${files.length}: ${file.name}…`);
+        await api.adminTeachCorpusAdd(session.token, extracted);
+        ok += 1;
+      } catch (err) {
+        console.warn(err);
+        errors.push(`${file.name}: ${err.message || err}`);
+      }
+    }
+    if (teachCorpusFiles) teachCorpusFiles.value = '';
+    await refreshCorpusList();
+    showTeachSessionStatus(
+      `Загружено ${ok}/${files.length}.`
+      + (errors.length ? ` Ошибки: ${errors.slice(0, 3).join('; ')}${errors.length > 3 ? '…' : ''}` : ''),
+    );
+  } finally {
+    teachSessionBusy = false;
+    setTeachSessionUi(teachSession);
+  }
+}
+
+async function runCorpusClear() {
+  if (!session?.token || teachSessionBusy) return;
+  if (!window.confirm('Очистить весь файловый корпус на сервере?')) return;
+  teachSessionBusy = true;
+  try {
+    await api.adminTeachCorpusClear(session.token);
+    await refreshCorpusList();
+    showTeachSessionStatus('Файловый корпус очищен.');
+  } catch (error) {
+    console.warn(error);
+    showTeachSessionStatus(error.message || 'Не удалось очистить корпус.');
+  } finally {
+    teachSessionBusy = false;
+    setTeachSessionUi(teachSession);
+  }
+}
+
+async function runTeachSessionStart(source = 'notion') {
   if (!session?.token || teachSessionBusy) return;
   teachSessionBusy = true;
   setTeachSessionUi(teachSession);
-  showTeachSessionStatus('Старт сессии…');
+  showTeachSessionStatus(source === 'files' ? 'Старт сессии на файловом корпусе…' : 'Старт сессии Notion…');
   try {
-    const { session: started } = await api.adminTeachSessionStart(session.token, {});
+    const { session: started } = await api.adminTeachSessionStart(session.token, { source });
     let current = started;
     setTeachSessionUi(current);
-    while (current.status === 'ingesting' && current.progress && !current.progress.done) {
-      showTeachSessionStatus(
-        `Корпус: ${current.progress.loaded}/${current.progress.total}…`,
-      );
-      const step = await api.adminTeachSessionIngest(session.token, current.id);
-      current = step.session;
-      setTeachSessionUi(current);
-      if (step.done) break;
+    if (source === 'notion') {
+      while (current.status === 'ingesting' && current.progress && !current.progress.done) {
+        showTeachSessionStatus(
+          `Корпус Notion: ${current.progress.loaded}/${current.progress.total}…`,
+        );
+        const step = await api.adminTeachSessionIngest(session.token, current.id);
+        current = step.session;
+        setTeachSessionUi(current);
+        if (step.done) break;
+      }
     }
+    const label = current.corpusKind === 'files' ? 'файлов' : 'глав';
     showTeachSessionStatus(
-      `Корпус готов (${current.progress?.loaded || 0} глав). Пишите задачу или реплику — Би может спросить.`,
+      `Корпус готов (${current.progress?.total || 0} ${label}). Пишите задачу — Би может спросить.`,
     );
     setTeachSessionUi(current);
   } catch (error) {
@@ -647,6 +730,7 @@ async function show() {
     await loadUsers();
     await loadFragments();
     await loadDisputes();
+    await refreshCorpusList();
   } else if (session) showStatus('Эта учётная запись не администратор, или вход был без passkey с отпечатком, лицом или PIN-кодом.');
 }
 
@@ -701,7 +785,10 @@ $('admin-logout').addEventListener('click', () => act(async () => {
   await show();
 }));
 
-teachSessionStartBtn?.addEventListener('click', () => act(runTeachSessionStart));
+teachCorpusUploadBtn?.addEventListener('click', () => act(runCorpusUpload));
+teachCorpusClearBtn?.addEventListener('click', () => act(runCorpusClear));
+teachSessionFilesBtn?.addEventListener('click', () => act(() => runTeachSessionStart('files')));
+teachSessionStartBtn?.addEventListener('click', () => act(() => runTeachSessionStart('notion')));
 teachSessionSendBtn?.addEventListener('click', () => act(runTeachSessionSend));
 teachSessionCloseBtn?.addEventListener('click', () => act(runTeachSessionClose));
 teachSessionInput?.addEventListener('keydown', (ev) => {
